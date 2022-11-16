@@ -145,13 +145,10 @@ def stat_cluster_parameter_check_parallel(sn_hit_list_per_event, sn_info_per_eve
         else:
             filter_bg_ratios = 1
 
-        # --- LIKELIHOOD ---
-        # To compensate for low background statistics, we assume a conservative value of 2 where bg is found to be 0
-        # (is this maybe not needed?)
-        #bg_hist[bg_hist < 1] = 0.1 # WTF TO DO WITH THIS??????
 
         # -------------------
         # Compute for 1 second 
+
         time_profile_x, time_profile_y = sl.load_time_profile()
         true_fake_trigger_rate = fake_trigger_rate * burst_time_window / 1e6
         sn_model = "LIVERMORE"
@@ -396,26 +393,70 @@ def stat_trigger_efficiency(event_num_per_time, sn_event_num, sn_clusters, sn_hi
 
 
 
+def get_efficiency_curve(opt_parameters, sn_hit_list_per_event, sn_info_per_event, bg_hit_list_per_event, bg_length, detector, true_tpc_size, 
+                            used_tpc_size, distances, opt_mcm, opt_tree, fake_trigger_rate, number_of_tests):
+                            
+    mct, mht, mhd, mxd, myd, mzd, _, cthresh = opt_parameters
+    distance_te, _, _, _, all_te, all_params = stat_cluster_parameter_scan_parallel(
+                                    sn_hit_list_per_event,  sn_info_per_event,
+                                    bg_hit_list_per_event, bg_length,
+                                    max_cluster_times=[mct],
+                                    max_hit_time_diffs=[mht], 
+                                    max_hit_distances=[mhd],
+                                    max_x_hit_distances=[mxd],
+                                    max_y_hit_distances=[myd],
+                                    max_z_hit_distances=[mzd],
+                                    detector=detector, verbose=1, true_tpc_size=true_tpc_size, 
+                                    used_tpc_size=used_tpc_size, distance_to_optimize=distances,
+                                    min_mcm=opt_mcm, max_mcm=opt_mcm, classify=True,
+                                    classifier_threshold=[cthresh], tree=opt_tree,
+                                    fake_trigger_rate=fake_trigger_rate, number_of_tests=number_of_tests)
+    
+    # distance_te, _, _, _, all_te_2, all_params_2 = stat_cluster_parameter_scan_parallel(
+    #                                 sn_hit_list_per_event, 
+    #                                 bg_hit_list_per_event, bg_length,
+    #                                 max_cluster_times=[mct],
+    #                                 max_hit_time_diffs=[mht], 
+    #                                 max_hit_distances=[mhd],
+    #                                 max_x_hit_distances=[mxd],
+    #                                 max_y_hit_distances=[myd],
+    #                                 max_z_hit_distances=[mzd],
+    #                                 detector=detector, verbose=1, true_tpc_size=true_tpc_size, 
+    #                                 used_tpc_size=used_tpc_size, distance_to_optimize=distances,
+    #                                 min_mcm=opt_mcm, max_mcm=opt_mcm, classify=True,
+    #                                 classifier_threshold=[cthresh], tree=opt_tree,
+    #                                 fake_trigger_rate=once_a_month_rate * 10)
+
+    dists = [p[-2] for p in all_params]
+    dists_2 = [p[-2] for p in all_params]
+    # plt.plot(dists, all_te)
+    # plt.plot(dists_2, all_te)
+    # plt.show()
+    print(AVERAGE_ENERGY, ALPHA, "OE")
+    pickle.dump([dists, dists_2, all_te, all_te], open("../saved_pickles/LAn{}_b{}_kys_{}_{}_{}".format(DISTANCE_TO_OPTIMIZE,
+                                                                                         BURST_TIME_WINDOW, AVERAGE_ENERGY, ALPHA, SIM_MODE), "wb"))
+    pickle.dump( (trigger_efficiency, opt_parameters, opt_mcm) , open("../saved_pickles/LAn{}_b{}_pys_{}_{}_{}".format(DISTANCE_TO_OPTIMIZE,
+                                                                                         BURST_TIME_WINDOW ,AVERAGE_ENERGY, ALPHA, SIM_MODE), "wb"))
+
+    return trigger_efficiency, opt_parameters, opt_mcm, opt_tree, all_params
+
+
 
 def stat_main(save=True, load_detected_clusters=False):
-    detector = "VD"
+    detector = DETECTOR
 
-    # Ratio to compensate for events generated outside of the active volume
-    # you DO NOT need to multiply the sizes, only the event numbers
-    ratio_larger = 1 # (375 * 2 * 732 * 2) / (325 * 2 * 675 * 2) # more than the active volume
-    true_tpc_size = 10
-    used_tpc_size = 2.6 
+    true_tpc_size = TRUE_TPC_SIZES[detector]
+    used_tpc_size = USED_TPC_SIZES[detector]
 
-    # Load hits
-    sn_limit = 10
-    sn_sim_number = sn_limit * 1000
+    # Load SN and BG hits
+    sn_limit = 10 # SN_FILE_LIMIT
     sn_total_hits, sn_hit_list_per_event, sn_info_per_event, _ = sl.load_all_sn_events_chunky(limit=sn_limit, event_num=1000, detector=detector)
 
 
-    bg_limit = 30
-    bg_sample_length = 8.5 # in ms
+    bg_limit = 30 # BG_FILE_LIMIT
+    #bg_sample_length = 8.5 # in ms
+    bg_length = bg_limit * BG_SAMPLE_LENGTHS[detector] # in miliseconds
     bg_total_hits, bg_hit_list_per_event, _, _, _ = sl.load_all_backgrounds_chunky_type_separated(limit=bg_limit, detector=detector)
-    #bg_total_hits, bg_hit_list_per_event, _ = sl.load_all_backgrounds_chunky(limit=bg_limit, detector=detector)
 
     # Do this to free much needed memory... (actually this is probably useless)
     del bg_total_hits
@@ -427,29 +468,26 @@ def stat_main(save=True, load_detected_clusters=False):
 
     # plt.scatter(len(sn_total_hits), sn_info_t[0])
     # plt.show()
-
     
-    bg_length = bg_limit * bg_sample_length * 20 # in miliseconds
-    
-    # Add background to our SN events
+    # Add background to our SN events (this is basically useless as the SN events are so short in time)
     # for i in range(len(sn_hit_list_per_event)):
     #     #display_hits(sn_hit_list_per_event[i], time=True)
     #     if len(sn_hit_list_per_event[i]) > 0:
-    #         sn_hit_list_per_event[i] = tools.spice_sn_event(sn_hit_list_per_event[i], bg_hit_list_per_event,
+    #         sn_hit_list_per_event[i] = aux.spice_sn_event(sn_hit_list_per_event[i], bg_hit_list_per_event,
     #                                                 bg_length_to_add=0.8, bg_length=bg_sample_length * 1000)
     #     #display_hits(sn_hit_list_per_event[i], time=True)
 
 
     # Find cluster parameters that maximize trigger efficiency
-    max_cluster_times = [0.25, 0.3]
-    max_hit_time_diffs = [0.2]
-    max_hit_distances = [525]
-    # New cluster parameters! (wooo)
+    max_cluster_times = MAX_CLUSTER_TIMES
+    max_hit_time_diffs = MAX_HIT_TIME_DIFFS
+    max_hit_distances = MAX_HIT_DISTANCES
+    # New cluster parameters! (wooo) (These have been discovered to be useless!)
     max_x_hit_distances = [25000]
     max_y_hit_distances = [20000]
     max_z_hit_distances = [30000]
 
-    once_a_month_rate = 1/(60 * 60 * 24 * 30)
+    once_a_month_rate = FAKE_TRIGGER_RATE
 
     # Find the optimal parameters without cluster filtering
     if load_detected_clusters:
@@ -468,10 +506,10 @@ def stat_main(save=True, load_detected_clusters=False):
                                         max_z_hit_distances=max_z_hit_distances,
                                         detector=detector, verbose=1, true_tpc_size=true_tpc_size, 
                                         used_tpc_size=used_tpc_size, distance_to_optimize=[DISTANCE_TO_OPTIMIZE],
-                                        min_mcm=11, max_mcm=13, classify=True, tree=None, classifier_threshold=[0.4, 0.36],
+                                        min_mcm=11, max_mcm=13, classify=True, tree=None, classifier_threshold=CLASSIFIER_THRESHOLD,
                                         fake_trigger_rate=once_a_month_rate, number_of_tests=300)
-    
-        print(all_effs, "FURUBUNGU")
+
+        print(all_effs, "EFF LIST")
 
     # Once we have the trigger efficiency optimized for the desired distance, we compute it for all distances
     efficiencies_list = []
@@ -522,6 +560,8 @@ def stat_main(save=True, load_detected_clusters=False):
                                                                                          BURST_TIME_WINDOW ,AVERAGE_ENERGY, ALPHA, SIM_MODE), "wb"))
 
     return trigger_efficiency, opt_parameters, opt_mcm, opt_tree, all_params
+
+
 
 
 

@@ -8,6 +8,7 @@ stats.chisqprob = lambda chisq, df: stats.chi2.sf(chisq, df)
 from numba import jit, vectorize, float64, int64
 from copy import deepcopy
 from parameters import *
+import random
 
 
 def poisson(k, lamb):
@@ -249,6 +250,35 @@ def distance_to_event_number(distance, model="LIVERMORE", tpc_size=10):
     return event_num
 
 
+def spice_sn_event(hit_list, bg_hit_list_per_event, bg_length_to_add, bg_length):
+    # Select one random BG sample and time order it (it should already be time ordered, but to be safe and future-proof)
+    bg_sample = random.choice(bg_hit_list_per_event)
+    time_sort = np.argsort(bg_sample[:, 3])
+    bg_sample = bg_sample[time_sort, :]
+
+    # Select a random time interval within the bg sample
+    #bg_hit_number = len(bg_sample[:, 3])
+    starting_point = np.random.rand() * bg_length - bg_length / 2 - bg_length_to_add
+    end_point = starting_point + bg_length_to_add
+
+    bg_sample = bg_sample[bg_sample[:, 3] > starting_point, :]
+    bg_sample = bg_sample[bg_sample[:, 3] < end_point, :]
+    
+    #print(bg_sample.shape, starting_point, end_point)
+
+    # Shift the center of the interval to t = the centre of the SN event
+    bg_sample[:, 3] -= (starting_point + end_point)/2 # to 0
+    bg_sample[:, 3] += (hit_list[0, 3] + hit_list[-1, 3])/2
+
+    #print(bg_sample[0, 3], bg_sample[-1, 3])
+
+    # Now combine with the sn hit sample (and sort in time)
+    spiced_hit_list = np.vstack((bg_sample, hit_list))
+
+    time_sort = np.argsort(spiced_hit_list[:, 3])
+    spiced_hit_list = spiced_hit_list[time_sort, :]
+
+    return spiced_hit_list
 
 if __name__ == "__main__":
     a = np.array([100,30,20,21,18,10,3,2,1,0])
