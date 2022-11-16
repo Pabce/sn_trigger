@@ -32,8 +32,11 @@ SN_EVENT_MULTIPLIER = 1.17
 #BG_DATA_DIR = "/eos/user/c/ccuesta/Pablo/sn_saves/prod_background_pds/"
 EVENT_DATA_DIR = "/eos/project-e/ep-nu/pbarhama/sn_saves/prod_snnue_pds/"
 BG_DATA_DIR = "/eos/project-e/ep-nu/pbarhama/sn_saves/prod_background_pds/"
-#EVENT_DATA_DIR = "/Users/pbarham/OneDrive/workspace/cern/ruth/prod_snnue_pds/"
-#BG_DATA_DIR = "/Users/pbarham/OneDrive/workspace/cern/ruth/prod_background_pds/prod_background_pds/lmem_prod_background_pds/"
+EVENT_DATA_DIR = "/Users/pbarham/OneDrive/workspace/cern/ruth/prod_snnue_pds/"
+BG_DATA_DIR = "/Users/pbarham/OneDrive/workspace/cern/ruth/prod_background_pds/prod_background_pds/lmem_prod_background_pds/"
+
+# Saves path for computed efficiencies, etc
+SAVE_PATH = "./saved_effs/"
 
 # Background types
 BG_TYPES = ["Ar39GenInLAr", "Kr85GenInLAr", "Ar42GenInLAr", "K42From42ArGenInLAr", "Rn222ChainGenInLAr",
@@ -43,8 +46,8 @@ BG_TYPES = ["Ar39GenInLAr", "Kr85GenInLAr", "Ar42GenInLAr", "K42From42ArGenInLAr
 #BG_TYPES = ["Ar39GenInLAr", "Kr85GenInLAr", "Ar42GenInLAr", "Rn222ChainGenInLAr"]
 
 # Number of files to load (go pretty low on these if not sent to a job)
-SN_FILE_LIMIT = 100
-BG_FILE_LIMIT = 100
+SN_FILE_LIMIT = 20
+BG_FILE_LIMIT = 20
 
 # Algorithm parameters
 FAKE_TRIGGER_RATE = 1/(60 * 60 * 24 * 30) # 1 trigger per month
@@ -55,20 +58,18 @@ ADC_MODE = 'normal' # 'low' or 'normal'
 DETECTOR = 'VD' # 'VD' or 'HD'
 CLASSIFY = True # True or False (Do we use the BDT? If not, you should iterate over many more clustering parameters)
 
-# Clustering parameters over which to search (don't go over too many, the classification does most of the work after all...)
-MAX_CLUSTER_TIMES = [0.25, 0.3] # In microseconds
-MAX_HIT_TIME_DIFFS = [0.2] # In microseconds
-MAX_HIT_DISTANCES = [525] # In cm
-LOWER_MIN_HIT_MULTUPLICITY = 11 # Minimum number of hits in a cluster
-UPPER_MIN_HIT_MULTUPLICITY = 13 # Minimum number of hits in a cluster
-CLASSIFIER_THRESHOLD = [0.3, 0.4] # Threshold for the BDT
-
-# Sectrum parameters
+# Spectrum parameters
 # GKVM 23 5
 # LIVERMORE 14.4 2.8
 # GARCHING 12.2 4.5
-AVERAGE_ENERGY = 23.0 # MeV
+AVERAGE_ENERGY = 63.0 # MeV
 ALPHA = 5.0 # Dimensionless 
 
-# Saves path for computed efficiencies, etc
-SAVE_PATH = "./saved_effs/"
+# Clustering parameters over which to search (don't go over too many, the classification does most of the work after all...)
+MAX_CLUSTER_TIMES = [0.3] # In microseconds
+MAX_HIT_TIME_DIFFS = [0.2] # In microseconds
+MAX_HIT_DISTANCES = [250, 525] # In cm
+LOWER_MIN_HIT_MULTUPLICITY = 10 # Minimum number of hits in a cluster
+UPPER_MIN_HIT_MULTUPLICITY = 12 # Minimum number of hits in a cluster
+CLASSIFIER_THRESHOLDS = [0.3, 0.4] # Threshold for the BDT
+

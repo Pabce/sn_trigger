@@ -147,21 +147,16 @@ def stat_cluster_parameter_check_parallel(sn_hit_list_per_event, sn_info_per_eve
 
 
         # -------------------
-        # Compute for 1 second 
+        # Compute for the BTW
 
         time_profile_x, time_profile_y = sl.load_time_profile()
         true_fake_trigger_rate = fake_trigger_rate * burst_time_window / 1e6
-        sn_model = "LIVERMORE"
+        sn_model = "LIVERMORE" # Don't worry, we can correct this later! (no need to change to GKVM or GARCHING, we can normalize a posteriori)
 
         total_event_num = aux.distance_to_event_number(distance_to_optimize, sn_model, true_tpc_size) * SN_EVENT_MULTIPLIER
         event_num_per_time = aux.event_number_per_time(time_profile_x, time_profile_y, total_event_num, burst_time_window)
-        #print(total_event_num, event_num_per_time)
         
         expected_bg_hist = bg_hist * 1/bg_length * burst_time_window/1000 * true_tpc_size/used_tpc_size
-
-        # print(aux.get_acceptable_likelihood(expected_bg_hist, once_a_month_rate))
-        # aux.cluster_comparison(sn_clusters, bg_clusters)
-        # exit()
 
         start = time.time()
         trigger_efficiency = stat_trigger_efficiency(event_num_per_time, sn_event_num, sn_clusters, sn_hit_multiplicities, sn_energies,
@@ -248,7 +243,7 @@ def stat_trigger_efficiency(event_num_per_time, sn_event_num, sn_clusters, sn_hi
                             expected_bg_hist, filter_bg_ratios, hbins, fake_trigger_rate, to_plot=False, number_of_tests=1000, classify=False, 
                             tree=None, threshold=0.5):
     
-    print("DALJHFLKJDHFLKAHDJSLSDJFLÑKSHFJLÑAKSDJÑLAJKSD")
+    print("TE GOING ON")
     energies = np.linspace(4, 100, 100)
     energies_histogram = aux.pinched_spectrum(energies, average_e=AVERAGE_ENERGY, alpha=ALPHA)
 
@@ -275,7 +270,7 @@ def stat_trigger_efficiency(event_num_per_time, sn_event_num, sn_clusters, sn_hi
         # plt.show()
 
         sn_hit_multiplicities = np.array(sn_hit_multiplicities)
-        sn_clusters = np.array(sn_clusters)
+        sn_clusters = np.array(sn_clusters, dtype=object)
         
         # Remove clusterless samples
         sample_ind_with_clusters = []
@@ -394,8 +389,8 @@ def stat_trigger_efficiency(event_num_per_time, sn_event_num, sn_clusters, sn_hi
 
 
 def get_efficiency_curve(opt_parameters, sn_hit_list_per_event, sn_info_per_event, bg_hit_list_per_event, bg_length, detector, true_tpc_size, 
-                            used_tpc_size, distances, opt_mcm, opt_tree, fake_trigger_rate, number_of_tests):
-                            
+                            used_tpc_size, distances, opt_mcm, opt_tree, fake_trigger_rate, number_of_tests, trigger_efficiency):
+
     mct, mht, mhd, mxd, myd, mzd, _, cthresh = opt_parameters
     distance_te, _, _, _, all_te, all_params = stat_cluster_parameter_scan_parallel(
                                     sn_hit_list_per_event,  sn_info_per_event,
@@ -408,7 +403,7 @@ def get_efficiency_curve(opt_parameters, sn_hit_list_per_event, sn_info_per_even
                                     max_z_hit_distances=[mzd],
                                     detector=detector, verbose=1, true_tpc_size=true_tpc_size, 
                                     used_tpc_size=used_tpc_size, distance_to_optimize=distances,
-                                    min_mcm=opt_mcm, max_mcm=opt_mcm, classify=True,
+                                    min_mcm=opt_mcm, max_mcm=opt_mcm, classify=CLASSIFY,
                                     classifier_threshold=[cthresh], tree=opt_tree,
                                     fake_trigger_rate=fake_trigger_rate, number_of_tests=number_of_tests)
     
@@ -442,7 +437,7 @@ def get_efficiency_curve(opt_parameters, sn_hit_list_per_event, sn_info_per_even
 
 
 
-def stat_main(save=True, load_detected_clusters=False):
+def stat_main(save=True):
     detector = DETECTOR
 
     true_tpc_size = TRUE_TPC_SIZES[detector]
@@ -452,7 +447,6 @@ def stat_main(save=True, load_detected_clusters=False):
     sn_limit = 10 # SN_FILE_LIMIT
     sn_total_hits, sn_hit_list_per_event, sn_info_per_event, _ = sl.load_all_sn_events_chunky(limit=sn_limit, event_num=1000, detector=detector)
 
-
     bg_limit = 30 # BG_FILE_LIMIT
     #bg_sample_length = 8.5 # in ms
     bg_length = bg_limit * BG_SAMPLE_LENGTHS[detector] # in miliseconds
@@ -461,13 +455,6 @@ def stat_main(save=True, load_detected_clusters=False):
     # Do this to free much needed memory... (actually this is probably useless)
     del bg_total_hits
     del sn_total_hits
-
-    # for i, l in enumerate(sn_hit_list_per_event):
-    #     plt.scatter(len(l), sn_info_per_event[i][0])
-    #     plt.show()
-
-    # plt.scatter(len(sn_total_hits), sn_info_t[0])
-    # plt.show()
     
     # Add background to our SN events (this is basically useless as the SN events are so short in time)
     # for i in range(len(sn_hit_list_per_event)):
@@ -489,79 +476,42 @@ def stat_main(save=True, load_detected_clusters=False):
 
     once_a_month_rate = FAKE_TRIGGER_RATE
 
-    # Find the optimal parameters without cluster filtering
-    if load_detected_clusters:
-        # trigger_efficiency, opt_params =\
-        #         pickle.load(open("../saved_pickles/detected_clusters_{}".format(bg_rate), "rb"))
-        pass
-    else:
-        trigger_efficiency, opt_parameters, opt_mcm, opt_tree, all_effs, _ = stat_cluster_parameter_scan_parallel(
-                                        sn_hit_list_per_event, sn_info_per_event,
-                                        bg_hit_list_per_event, bg_length,
-                                        max_cluster_times=max_cluster_times,
-                                        max_hit_time_diffs=max_hit_time_diffs, 
-                                        max_hit_distances=max_hit_distances,
-                                        max_x_hit_distances=max_x_hit_distances,
-                                        max_y_hit_distances=max_y_hit_distances,
-                                        max_z_hit_distances=max_z_hit_distances,
-                                        detector=detector, verbose=1, true_tpc_size=true_tpc_size, 
-                                        used_tpc_size=used_tpc_size, distance_to_optimize=[DISTANCE_TO_OPTIMIZE],
-                                        min_mcm=11, max_mcm=13, classify=True, tree=None, classifier_threshold=CLASSIFIER_THRESHOLD,
-                                        fake_trigger_rate=once_a_month_rate, number_of_tests=300)
+    trigger_efficiency, opt_parameters, opt_mcm, opt_tree, all_effs, _ = stat_cluster_parameter_scan_parallel(
+                                sn_hit_list_per_event, sn_info_per_event,
+                                bg_hit_list_per_event, bg_length,
+                                max_cluster_times=max_cluster_times,
+                                max_hit_time_diffs=max_hit_time_diffs, 
+                                max_hit_distances=max_hit_distances,
+                                max_x_hit_distances=max_x_hit_distances,
+                                max_y_hit_distances=max_y_hit_distances,
+                                max_z_hit_distances=max_z_hit_distances,
+                                detector=detector, verbose=1, true_tpc_size=true_tpc_size, 
+                                used_tpc_size=used_tpc_size, distance_to_optimize=[DISTANCE_TO_OPTIMIZE],
+                                min_mcm=11, max_mcm=13, classify=CLASSIFY, tree=None, classifier_threshold=CLASSIFIER_THRESHOLDS,
+                                fake_trigger_rate=once_a_month_rate, number_of_tests=300)
 
-        print(all_effs, "EFF LIST")
+    ct, ht, hd, xhd, yhd, zhd, distance_to_optimize, classifier_threshold = opt_parameters
+    print(all_effs, "EFF LIST")
 
-    # Once we have the trigger efficiency optimized for the desired distance, we compute it for all distances
-    efficiencies_list = []
-    distances = np.arange(4, 50, 1.5)
+    print("\n")
+    print("------------------------------------------------------------------------------------------------")
+    print("--------- FOUND OPTIMAL PARAMETERS -----------")
+    print("Max cluster time: {} µs, Max hit time diff: {} µs, Max hit distance: {} cm".format(ct, ht, hd))
+    print("Min hit multiplicity:", opt_mcm)
+    print("BDT threshold", classifier_threshold)
+    print("Trigger efficiency:", trigger_efficiency)
+    print("------------------------------------------------------------------------------------------------")
+    print("Calculated for d={} kpc, <E>={} MeV, alpha={}, BTW={} s, SIM_MODE={}".format(distance_to_optimize, AVERAGE_ENERGY, ALPHA, BURST_TIME_WINDOW/1e6, SIM_MODE))
+    print("------------------------------------------------------------------------------------------------")
+    print("\n")
 
-    return trigger_efficiency, opt_parameters, opt_mcm, opt_tree, None
-    
-    mct, mht, mhd, mxd, myd, mzd, _, cthresh = opt_parameters
-    distance_te, _, _, _, all_te, all_params = stat_cluster_parameter_scan_parallel(
-                                    sn_hit_list_per_event,  sn_info_per_event,
-                                    bg_hit_list_per_event, bg_length,
-                                    max_cluster_times=[mct],
-                                    max_hit_time_diffs=[mht], 
-                                    max_hit_distances=[mhd],
-                                    max_x_hit_distances=[mxd],
-                                    max_y_hit_distances=[myd],
-                                    max_z_hit_distances=[mzd],
-                                    detector=detector, verbose=1, true_tpc_size=true_tpc_size, 
-                                    used_tpc_size=used_tpc_size, distance_to_optimize=distances,
-                                    min_mcm=opt_mcm, max_mcm=opt_mcm, classify=True,
-                                    classifier_threshold=[cthresh], tree=opt_tree,
-                                    fake_trigger_rate=once_a_month_rate, number_of_tests=400)
-    
-    # distance_te, _, _, _, all_te_2, all_params_2 = stat_cluster_parameter_scan_parallel(
-    #                                 sn_hit_list_per_event, 
-    #                                 bg_hit_list_per_event, bg_length,
-    #                                 max_cluster_times=[mct],
-    #                                 max_hit_time_diffs=[mht], 
-    #                                 max_hit_distances=[mhd],
-    #                                 max_x_hit_distances=[mxd],
-    #                                 max_y_hit_distances=[myd],
-    #                                 max_z_hit_distances=[mzd],
-    #                                 detector=detector, verbose=1, true_tpc_size=true_tpc_size, 
-    #                                 used_tpc_size=used_tpc_size, distance_to_optimize=distances,
-    #                                 min_mcm=opt_mcm, max_mcm=opt_mcm, classify=True,
-    #                                 classifier_threshold=[cthresh], tree=opt_tree,
-    #                                 fake_trigger_rate=once_a_month_rate * 10)
+    if save:
+        sim_parameters = [FAKE_TRIGGER_RATE, BURST_TIME_WINDOW, DISTANCE_TO_OPTIMIZE, SIM_MODE, ADC_MODE, DETECTOR, CLASSIFY, AVERAGE_ENERGY, ALPHA]
+        file_name = sl.save_efficiency_data(eff_data=[trigger_efficiency, opt_parameters, opt_mcm, opt_tree, all_effs, sim_parameters], 
+            sim_parameters=sim_parameters)
+        print("Saved efficiency data to file:", file_name)
 
-    dists = [p[-2] for p in all_params]
-    dists_2 = [p[-2] for p in all_params]
-    # plt.plot(dists, all_te)
-    # plt.plot(dists_2, all_te)
-    # plt.show()
-    print(AVERAGE_ENERGY, ALPHA, "OE")
-    pickle.dump([dists, dists_2, all_te, all_te], open("../saved_pickles/LAn{}_b{}_kys_{}_{}_{}".format(DISTANCE_TO_OPTIMIZE,
-                                                                                         BURST_TIME_WINDOW, AVERAGE_ENERGY, ALPHA, SIM_MODE), "wb"))
-    pickle.dump( (trigger_efficiency, opt_parameters, opt_mcm) , open("../saved_pickles/LAn{}_b{}_pys_{}_{}_{}".format(DISTANCE_TO_OPTIMIZE,
-                                                                                         BURST_TIME_WINDOW ,AVERAGE_ENERGY, ALPHA, SIM_MODE), "wb"))
-
-    return trigger_efficiency, opt_parameters, opt_mcm, opt_tree, all_params
-
-
+    return trigger_efficiency, opt_parameters, opt_mcm, opt_tree, None 
 
 
 
@@ -578,7 +528,16 @@ if __name__ == '__main__':
 
     print("START ---> ")
 
-    print(stat_main())
+    stat_main()
+
+    eff_data, file_name = sl.load_efficiency_data(
+                    sim_parameters=[FAKE_TRIGGER_RATE, BURST_TIME_WINDOW, DISTANCE_TO_OPTIMIZE, SIM_MODE, ADC_MODE, DETECTOR, CLASSIFY, AVERAGE_ENERGY, ALPHA])
+    print(eff_data)
+    print(file_name)
+
+    # Once we have the trigger efficiency optimized for the desired distance, we compute it for all distances
+    efficiencies_list = []
+    distances = np.arange(4, 50, 1.5)
 
 
 
