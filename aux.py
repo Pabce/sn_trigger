@@ -1,4 +1,3 @@
-from tkinter.messagebox import RETRY
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy
@@ -8,8 +7,7 @@ from scipy import stats
 stats.chisqprob = lambda chisq, df: stats.chi2.sf(chisq, df)
 from numba import jit, vectorize, float64, int64
 from copy import deepcopy
-import pickle
-import time
+from parameters import *
 
 
 def poisson(k, lamb):
@@ -202,6 +200,54 @@ def get_energy_indices(energies, energy_histo, sn_energies, size):
         #print(left_energy, right_energy, indices)
 
     return np.array(event_indices)
+
+
+def event_number_per_time(time_profile_x, time_profile_y, total_event_number, burst_time_window):
+    if burst_time_window == 0:
+        return 0
+    # We integrate the time profile in (0, time_window)
+    # TIME PROFILE IS IN MS!
+    spacing = time_profile_x[1] - time_profile_x[0]
+    
+    #total_integral = np.sum(time_profile_y) * spacing/1000 * 10 # From ms to s, times 9.9 seconds duration
+    # The total integral is normalized to 1 so no need for ratios
+
+    # We compute the ratio with the desired burst window and multiply by the total number of events
+    # WE NEED TO CONVERT THE BURST TIME WINDOW TO MS!!!
+    ms_burst_time_window = burst_time_window/1000
+    b_index = 0
+    interp = 0
+    for i, t in enumerate(time_profile_x):
+        if t > ms_burst_time_window:
+            b_index = i
+            interp = (ms_burst_time_window - time_profile_x[i - 1]) / spacing
+            break
+
+    # Do some interpolation
+    int_1 = np.sum(time_profile_y[0: b_index - 1]) * spacing/1000 * 10
+    int_2 = np.sum(time_profile_y[b_index - 1: b_index]) * spacing/1000 * 10
+    window_integral = int_1 + interp * int_2
+
+    event_number = window_integral * total_event_number
+    #print(event_number)
+    #print(window_integral, total_integral, b_index, interp)
+
+    return event_number
+
+
+def event_number_to_distance(event_number, model="LIVERMORE", tpc_size=10):
+
+    distance = np.sqrt(INTERACTION_NUMBER_10KPC[model] * 10**2 * (tpc_size/40) * 1/event_number)
+
+    return distance
+
+
+def distance_to_event_number(distance, model="LIVERMORE", tpc_size=10):
+
+    event_num = INTERACTION_NUMBER_10KPC[model] * 10**2 * (tpc_size/40) * 1/distance**2
+
+    return event_num
+
 
 
 if __name__ == "__main__":

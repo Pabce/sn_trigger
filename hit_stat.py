@@ -17,11 +17,9 @@ import random
 import classifier
 import aux
 import save_n_load as sl
-import tools
 import clustering
 from parameters import *
 #from numba import jit
-
 
 
 
@@ -36,7 +34,7 @@ def stat_cluster_parameter_check_parallel(sn_hit_list_per_event, sn_info_per_eve
     # ---------------------------
 
     to_plot = False
-    print("BLOBERYEYEY", mp.current_process())
+    print("STARTING NEW CPU PROCESS", mp.current_process())
 
     # Arguments to add
     burst_time_window = BURST_TIME_WINDOW # microseconds
@@ -136,8 +134,12 @@ def stat_cluster_parameter_check_parallel(sn_hit_list_per_event, sn_info_per_eve
         if classify:
             new_bg_hist, _ = np.histogram(new_bg_hit_multiplicities, bins=hbins, density=False)
 
+            zeros = np.where(bg_hist == 0)[0]
+            bg_hist[zeros] = 1
+            new_bg_hist[zeros] = 1
+
             filter_bg_ratios = new_bg_hist / bg_hist
-            filter_bg_ratios[bg_hist == 0] = 1
+
             #print(filter_bg_ratios)
 
         else:
@@ -154,8 +156,8 @@ def stat_cluster_parameter_check_parallel(sn_hit_list_per_event, sn_info_per_eve
         true_fake_trigger_rate = fake_trigger_rate * burst_time_window / 1e6
         sn_model = "LIVERMORE"
 
-        total_event_num = distance_to_event_number(distance_to_optimize, sn_model, true_tpc_size) * SN_EVENT_MULTIPLIER
-        event_num_per_time = event_number_per_time(time_profile_x, time_profile_y, total_event_num, burst_time_window)
+        total_event_num = aux.distance_to_event_number(distance_to_optimize, sn_model, true_tpc_size) * SN_EVENT_MULTIPLIER
+        event_num_per_time = aux.event_number_per_time(time_profile_x, time_profile_y, total_event_num, burst_time_window)
         #print(total_event_num, event_num_per_time)
         
         expected_bg_hist = bg_hist * 1/bg_length * burst_time_window/1000 * true_tpc_size/used_tpc_size
@@ -393,52 +395,6 @@ def stat_trigger_efficiency(event_num_per_time, sn_event_num, sn_clusters, sn_hi
     return trigger_efficiency
 
 
-def event_number_per_time(time_profile_x, time_profile_y, total_event_number, burst_time_window):
-    if burst_time_window == 0:
-        return 0
-    # We integrate the time profile in (0, time_window)
-    # TIME PROFILE IS IN MS!
-    spacing = time_profile_x[1] - time_profile_x[0]
-    
-    #total_integral = np.sum(time_profile_y) * spacing/1000 * 10 # From ms to s, times 9.9 seconds duration
-    # The total integral is normalized to 1 so no need for ratios
-
-    # We compute the ratio with the desired burst window and multiply by the total number of events
-    # WE NEED TO CONVERT THE BURST TIME WINDOW TO MS!!!
-    ms_burst_time_window = burst_time_window/1000
-    b_index = 0
-    interp = 0
-    for i, t in enumerate(time_profile_x):
-        if t > ms_burst_time_window:
-            b_index = i
-            interp = (ms_burst_time_window - time_profile_x[i - 1]) / spacing
-            break
-
-    # Do some interpolation
-    int_1 = np.sum(time_profile_y[0: b_index - 1]) * spacing/1000 * 10
-    int_2 = np.sum(time_profile_y[b_index - 1: b_index]) * spacing/1000 * 10
-    window_integral = int_1 + interp * int_2
-
-    event_number = window_integral * total_event_number
-    #print(event_number)
-    #print(window_integral, total_integral, b_index, interp)
-
-    return event_number
-
-
-def event_number_to_distance(event_number, model="LIVERMORE", tpc_size=10):
-
-    distance = np.sqrt(INTERACTION_NUMBER_10KPC[model] * 10**2 * (tpc_size/40) * 1/event_number)
-
-    return distance
-
-
-def distance_to_event_number(distance, model="LIVERMORE", tpc_size=10):
-
-    event_num = INTERACTION_NUMBER_10KPC[model] * 10**2 * (tpc_size/40) * 1/distance**2
-
-    return event_num
-
 
 
 def stat_main(save=True, load_detected_clusters=False):
@@ -451,17 +407,17 @@ def stat_main(save=True, load_detected_clusters=False):
     used_tpc_size = 2.6 
 
     # Load hits
-    sn_limit = 80
+    sn_limit = 10
     sn_sim_number = sn_limit * 1000
     sn_total_hits, sn_hit_list_per_event, sn_info_per_event, _ = sl.load_all_sn_events_chunky(limit=sn_limit, event_num=1000, detector=detector)
 
 
-    bg_limit = 110
+    bg_limit = 30
     bg_sample_length = 8.5 # in ms
     bg_total_hits, bg_hit_list_per_event, _, _, _ = sl.load_all_backgrounds_chunky_type_separated(limit=bg_limit, detector=detector)
     #bg_total_hits, bg_hit_list_per_event, _ = sl.load_all_backgrounds_chunky(limit=bg_limit, detector=detector)
 
-    # Do this to free much needed memory...
+    # Do this to free much needed memory... (actually this is probably useless)
     del bg_total_hits
     del sn_total_hits
 
@@ -486,8 +442,8 @@ def stat_main(save=True, load_detected_clusters=False):
 
     # Find cluster parameters that maximize trigger efficiency
     max_cluster_times = [0.25, 0.3]
-    max_hit_time_diffs = [0.2, 0.21]
-    max_hit_distances = [525, 550]
+    max_hit_time_diffs = [0.2]
+    max_hit_distances = [525]
     # New cluster parameters! (wooo)
     max_x_hit_distances = [25000]
     max_y_hit_distances = [20000]
@@ -521,7 +477,7 @@ def stat_main(save=True, load_detected_clusters=False):
     efficiencies_list = []
     distances = np.arange(4, 50, 1.5)
 
-    #return trigger_efficiency, opt_parameters, opt_mcm, opt_tree, None
+    return trigger_efficiency, opt_parameters, opt_mcm, opt_tree, None
     
     mct, mht, mhd, mxd, myd, mzd, _, cthresh = opt_parameters
     distance_te, _, _, _, all_te, all_params = stat_cluster_parameter_scan_parallel(
@@ -582,44 +538,7 @@ if __name__ == '__main__':
 
     print("START ---> ")
 
-    #main()
     print(stat_main())
-    exit()
-
-    time_profile_x, time_profile_y = load_time_profile()
-    print(time_profile_x[-1])
-    print(event_number_per_time(time_profile_x, time_profile_y, total_event_number=10, burst_time_window=10e6))
-    plt.scatter(time_profile_x, time_profile_y)
-    plt.show()
-
-
-    sn_total_hits, sn_hit_list_per_event, hit_num_per_channel = load_hit_data(file_name="psn_g4_digi_reco_hist.root")
-    bg_total_hits, bg_hit_list_per_event, hit_num_per_channel = load_all_backgrounds(limit=10)
-
-    #cluster_parameter_scan_parallel(sn_hit_list_per_event, bg_hit_list_per_event, 1, 2000, [0.1, 0.2], [0.05], [250], 0)
-
-    #bg_total_hits, bg_hit_list_per_event, hit_num_per_channel = load_hit_data(file_name="pbg_g4_digi_condor_1647520565_reco_hist.root")# "background/pbg_g4_digi_condor_reco_hist.root")
-    
-    # bg_total_hits = pickle.load(open("saved_pickles/fake_bg", "rb"))
-    # bg_hit_list_per_event = [bg_total_hits]
-
-    plt.hist(bg_total_hits[:, 2], bins=168)
-    plt.title("BG hits received per Optical Channel")
-    plt.show()
-
-    print("BG Shape", bg_total_hits.shape)
-
-    #display_hits(bg_total_hits, three_d=True)
-    # bg_lenght = 1000 # in mus
-    # detected_clusters, dc_count = cluster_parameter_scan(sn_hit_list_per_event, bg_hit_list_per_event, 1, bg_lenght,
-    #                                     max_cluster_times=[63e-3, 125e-3, 0.25, 0.5, 1, 2],
-    #                                     max_hit_time_diffs=[50e-3, 0.1, 0.2, 0.4], 
-    #                                     max_hit_distances=[150, 250, 350, 450], verbose=0)
-    
-    #print(dc_count)
-    
-    _, mults, clusters = hit_multiplicity_scan(bg_hit_list_per_event, threshold=1, min_mult=5, max_mult=50, max_cluster_time=1, 
-                            max_hit_time_diff=0.5, max_hit_distance=450, verbose=1, spatial_filter=False)
 
 
 

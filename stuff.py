@@ -4,22 +4,22 @@ from scipy.optimize import minimize
 from scipy.special import factorial
 from scipy import stats
 import pickle
-import ROOT
-
-import hitting as hp
-import fake_background
-
+import uproot
 
 
 # Generate a 2d array with the distance between each pair of optical channels.
 # Also for each individual coordinate
 def generate_distance_grids():
-    rfile = ROOT.TFile("../../sn_saves/prod_snnue_pds/prodmarley_nue_dune10kt_vd_1x8x14_1659717699.998588800_g4_detsim_digi_reco_hist.root")
+    #rfile = ROOT.TFile("../../sn_saves/prod_snnue_pds/prodmarley_nue_dune10kt_vd_1x8x14_1659717699.998588800_g4_detsim_digi_reco_hist.root")
+    uproot_coords = uproot.open("/Users/pbarham/OneDrive/workspace/cern/ruth/prod_snnue_pds/prodmarley_nue_dune10kt_vd_1x8x14_larger_lowADC_1665753396.179956833_g4_detsim_xe_reco_hist.root")["opflashana/OpDetCoords"]
     #rfile = ROOT.TFile("../horizontaldrift/hdprod_g4_digi_reco_hist.root")
-    coord_tree = rfile.Get("opflashana/OpDetCoords")
+   
+    coords_dict = uproot_coords.arrays(['X_OpDet', 'Y_OpDet', 'Z_OpDet'], library="np")
+    coords = [coords_dict[key][0:168] for key in coords_dict]
+    coords = np.array(coords).T
 
-    coords = coord_tree.AsMatrix(['X_OpDet', 'Y_OpDet', 'Z_OpDet'])[0:168, 0:168]
     print(coords)
+    print(coords.shape)
     print(np.min(np.abs(coords[:,0])))
 
     print(len(coords[coords[:, 0] > -325, 0]))
@@ -36,7 +36,8 @@ def generate_distance_grids():
     # print(coords[0,2], coords[48, 2], "C")
 
     op_channel_number = len(coords)
-    print(op_channel_number)
+    #print(op_channel_number)
+
     distance_array = np.zeros((op_channel_number, op_channel_number))
     x_distance_array = np.zeros((op_channel_number, op_channel_number))
     y_distance_array = np.zeros((op_channel_number, op_channel_number))
@@ -58,10 +59,12 @@ def generate_distance_grids():
     
     #print(distance_array)
 
-    pickle.dump(distance_array, open("../saved_pickles/op_distance_array_VD", "wb"))
-    pickle.dump(x_distance_array, open("../saved_pickles/op_x_distance_array_VD", "wb"))
-    pickle.dump(y_distance_array, open("../saved_pickles/op_y_distance_array_VD", "wb"))
-    pickle.dump(z_distance_array, open("../saved_pickles/op_z_distance_array_VD", "wb"))
+    pickle.dump(distance_array, open("./aux_pickles/op_distance_array_VD", "wb"))
+    pickle.dump(x_distance_array, open("./aux_pickles/op_x_distance_array_VD", "wb"))
+    pickle.dump(y_distance_array, open("./aux_pickles/op_y_distance_array_VD", "wb"))
+    pickle.dump(z_distance_array, open("./aux_pickles/op_z_distance_array_VD", "wb"))
+
+    print(y_distance_array)
 
 # TODO
 def generate_coordinate_arrays():
@@ -187,8 +190,8 @@ def find_background_clusters():
 if __name__ == '__main__':
     print("SKAJHDLKSJHADLKA")
 
-    # generate_distance_grids()
-    # exit()
+    generate_distance_grids()
+    exit()
 
     import save_n_load as sl
     sn_limit = 18
