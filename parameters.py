@@ -62,7 +62,7 @@ CLASSIFY = True # True or False (Do we use the BDT? If not, you should iterate o
 # GKVM 23 5
 # LIVERMORE 14.4 2.8
 # GARCHING 12.2 4.5
-AVERAGE_ENERGY = 63.0 # MeV
+AVERAGE_ENERGY = 23.0 # MeV
 ALPHA = 5.0 # Dimensionless 
 
 # Clustering parameters over which to search (don't go over too many, the classification does most of the work after all...)
