@@ -114,7 +114,7 @@ def spatial_correlation(cluster, max_hit_distance, max_x_hit_distance, max_y_hit
     return space_cluster
 
 
-# Do a continuous clustering respecting the time distribution (for bg)
+# Do a continuous clustering respecting the time distribution
 # I guess this can also be used for "discrete"? Just feeding events one by one...
 def clustering_continuous(hits, max_cluster_time, max_hit_time_diff, max_hit_distance, max_x_hit_distance, max_y_hit_distance, max_z_hit_distance,
                             min_hit_mult, verbose=0, spatial_filter=True, detector="VD"):
@@ -314,3 +314,53 @@ def cluster_comparison(sn_clusters, bg_clusters):#, sn_hit_multiplicities, bg_hi
 
 
     return features, targets
+
+
+def full_clustering(sn_hit_list_per_event, sn_info_per_event, bg_hit_list_per_event, max_cluster_time, max_hit_time_diff, 
+                                                    max_hit_distance, max_x_hit_distance, max_y_hit_distance, max_z_hit_distance,
+                                                    min_hit_mult, detector, verbose):
+    bg_clusters = []
+    bg_hit_multiplicities = []
+
+    # Find clusters in BG
+    for i, hit_list in enumerate(bg_hit_list_per_event):
+        if hit_list.size == 0:
+            continue 
+        
+        bg_clusters_i, bg_hit_multiplicities_i = clustering_continuous(hit_list, max_cluster_time=max_cluster_time, max_hit_time_diff=max_hit_time_diff, 
+                                                max_hit_distance=max_hit_distance, max_x_hit_distance=max_x_hit_distance, max_y_hit_distance=max_y_hit_distance, 
+                                                max_z_hit_distance=max_z_hit_distance, min_hit_mult=min_hit_mult, detector=detector, verbose=verbose)
+
+        bg_clusters.extend(bg_clusters_i)
+        bg_hit_multiplicities.extend(bg_hit_multiplicities_i)
+    
+
+    # Find SN clusters for current parameters
+    sn_clusters = []
+    sn_hit_multiplicities = []
+    sn_energies = []
+
+    for i, hit_list in enumerate(sn_hit_list_per_event):
+        if hit_list.size == 0:
+            continue 
+
+        sn_clusters_i, sn_hit_multiplicities_i = clustering_continuous(hit_list, max_cluster_time=max_cluster_time, max_hit_time_diff=max_hit_time_diff, 
+                                                max_hit_distance=max_hit_distance, max_x_hit_distance=max_x_hit_distance, max_y_hit_distance=max_y_hit_distance, 
+                                                max_z_hit_distance=max_z_hit_distance, min_hit_mult=min_hit_mult, detector=detector, verbose=verbose)
+
+        num_clusters = len(sn_clusters_i)
+
+        if num_clusters == 0:
+            sn_clusters_i = [None]
+            sn_hit_multiplicities_i = [-1]
+            num_clusters = 1
+
+        #print(i, "sn_info_per_event", len(sn_info_per_event), "sn_hit_list_per_event", len(sn_hit_list_per_event))
+        sn_energies.extend([sn_info_per_event[i, 0]] * num_clusters)
+
+        sn_clusters.extend(sn_clusters_i)
+        sn_hit_multiplicities.extend(sn_hit_multiplicities_i)
+
+    sn_energies = np.array(sn_energies)
+
+    return bg_clusters, bg_hit_multiplicities, sn_clusters, sn_hit_multiplicities, sn_energies 

@@ -280,6 +280,39 @@ def spice_sn_event(hit_list, bg_hit_list_per_event, bg_length_to_add, bg_length)
 
     return spiced_hit_list
 
+
+def display_hits(hits, three_d=False, time=False):
+    # Weird notation to accomodate for list of individual hits
+    x_coords, y_coords, z_coords = hits[:, 5], hits[:, 4], hits[:, 6]
+    time_coords = hits[:, 3]
+
+    fig = plt.figure()
+
+    if three_d:
+        ax = fig.add_subplot(projection='3d')
+        ax.scatter(z_coords, x_coords, y_coords)
+        ax.set_xlabel('Z') # This is due to Z being in the direction of the beam
+        ax.set_ylabel('X')
+        ax.set_zlabel('Y')
+        #ax.set_box_aspect((np.ptp(hits[:][6]), np.ptp(hits[:][5]), np.ptp(hits[:][4])))
+
+    elif time:
+        ax = fig.add_subplot(projection='3d')
+        ax.scatter(z_coords, x_coords, time_coords)
+        ax.set_xlabel('Z') # This is due to Z being in the direction of the beam
+        ax.set_ylabel('X')
+        ax.set_zlabel('time')
+        #ax.set_box_aspect((np.ptp(hits[:,6]), np.ptp(hits[:,5]), np.ptp(hits[:,4])))
+    
+    else:
+        ax = fig.add_subplot()
+        ax.scatter(z_coords, x_coords)
+        ax.set_xlabel('Z') # This is due to Z being in the direction of the beam
+        ax.set_ylabel('X')
+
+    plt.show()
+
+
 if __name__ == "__main__":
     a = np.array([100,30,20,21,18,10,3,2,1,0])
     b = np.array([101,31,22,21,17,11,4,2,2,1])

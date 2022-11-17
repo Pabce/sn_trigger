@@ -1,4 +1,5 @@
 import pickle
+import numpy as np
 
 # NO NEED TO TOUCH THESE IN PRINCIPLE -------------------------------------------------------------------------------------
 
@@ -57,6 +58,7 @@ SIM_MODE = 'xe' # 'xe' or 'aronly'
 ADC_MODE = 'normal' # 'low' or 'normal'
 DETECTOR = 'VD' # 'VD' or 'HD'
 CLASSIFY = True # True or False (Do we use the BDT? If not, you should iterate over many more clustering parameters)
+DISTANCES = np.arange(4, 40, 1.5) # In kpc (distances in which to compute the efficiencies)
 
 # Spectrum parameters
 # GKVM 23 5
@@ -68,7 +70,7 @@ ALPHA = 5.0 # Dimensionless
 # Clustering parameters over which to search (don't go over too many, the classification does most of the work after all...)
 MAX_CLUSTER_TIMES = [0.3] # In microseconds
 MAX_HIT_TIME_DIFFS = [0.2] # In microseconds
-MAX_HIT_DISTANCES = [250, 525] # In cm
+MAX_HIT_DISTANCES = [500, 525] # In cm
 LOWER_MIN_HIT_MULTUPLICITY = 10 # Minimum number of hits in a cluster
 UPPER_MIN_HIT_MULTUPLICITY = 12 # Minimum number of hits in a cluster
 CLASSIFIER_THRESHOLDS = [0.3, 0.4] # Threshold for the BDT

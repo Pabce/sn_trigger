@@ -390,7 +390,7 @@ def save_efficiency_data(eff_data, sim_parameters):
     
     # Save this correspondence to a dictionary
     try:
-        file_names = pickle.load(open("file_names_dict.pcl", "rb"))
+        file_names = pickle.load(open("{}/{}".format(SAVE_PATH, "file_names_dict.pcl"), "rb"))
         if not isinstance(file_names, dict):
                 file_names = {}
     
@@ -404,7 +404,7 @@ def save_efficiency_data(eff_data, sim_parameters):
         file_names = {}
         file_names[sim_parameters] = file_name
 
-    pickle.dump(file_names, open("file_names_dict.pcl", "wb"))
+    pickle.dump(file_names, open("{}/{}".format(SAVE_PATH, "file_names_dict.pcl"), "wb"))
 
     # Save the data
     pickle.dump(eff_data, open("{}/{}".format(SAVE_PATH, file_name), "wb"))
@@ -412,14 +412,61 @@ def save_efficiency_data(eff_data, sim_parameters):
     return file_name
 
 
-def load_efficiency_data(sim_parameters, file_name=None):
+def load_efficiency_data(sim_parameters=[], file_name=None):
     sim_parameters = tuple(sim_parameters)
     if file_name is None:
-        file_names = pickle.load(open("file_names_dict.pcl", "rb"))
+        file_names = pickle.load(open("{}/{}".format(SAVE_PATH, "file_names_dict.pcl"), "rb"))
         # Find the file name corresponding to the sim_parameters
         file_name = file_names[sim_parameters]
 
     # Load the data
     eff_data = pickle.load(open("{}/{}".format(SAVE_PATH, file_name), "rb"))
+    print("Loaded efficiency data from file {}".format(file_name))
 
     return eff_data, file_name
+
+
+def save_efficiency_curve(eff_curve_data, sim_parameters):
+    #ftr, btw, dist, sim_mode, adc_mode, detector, classify, avg_energy, alpha = sim_parameters
+    sim_parameters = tuple(sim_parameters)
+
+    # Generate a random string to identify the file
+    random_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    file_name = "efficiency_curve_" + random_string + ".pcl"
+    
+    # Save this correspondence to a dictionary
+    try:
+        file_names = pickle.load(open("{}/{}".format(SAVE_PATH, "file_names_dict.pcl"), "rb"))
+        if not isinstance(file_names, dict):
+                file_names = {}
+    
+        # Check if entry with these sim_parameters already exists
+        if sim_parameters in file_names.keys():
+            file_name = file_names[sim_parameters]
+
+        file_names[sim_parameters] = file_name
+
+    except FileNotFoundError:
+        file_names = {}
+        file_names[sim_parameters] = file_name
+
+    pickle.dump(file_names, open("{}/{}".format(SAVE_PATH, "file_names_dict.pcl"), "wb"))
+
+    # Save the data
+    pickle.dump(eff_curve_data, open("{}/{}".format(SAVE_PATH, file_name), "wb"))
+
+    return file_name
+
+def load_efficiency_curve(sim_parameters=[], file_name=None):
+    sim_parameters = tuple(sim_parameters)
+    if file_name is None:
+        file_names = pickle.load(open("{}/{}".format(SAVE_PATH, "file_names_dict.pcl"), "rb"))
+        # Find the file name corresponding to the sim_parameters
+        file_name = file_names[sim_parameters]
+
+    # Load the data
+    eff_curve_data = pickle.load(open("{}/{}".format(SAVE_PATH, file_name), "rb"))
+    print("Loaded efficiency curve from file {}".format(file_name))
+
+    return eff_curve_data, file_name
+
