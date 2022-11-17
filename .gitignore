@@ -1,0 +1,2 @@
+# Ignore all saved efficiency pickles
+saved_effs/*.pcl

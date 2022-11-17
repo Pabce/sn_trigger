@@ -2,6 +2,7 @@ from copy import deepcopy
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import argparse
 
 import sys
 from scipy import stats
@@ -340,10 +341,10 @@ def get_efficiency_curve(opt_parameters, sn_hit_list_per_event, sn_info_per_even
     sim_parameters = [FAKE_TRIGGER_RATE, BURST_TIME_WINDOW, DISTANCE_TO_OPTIMIZE, SIM_MODE, ADC_MODE, DETECTOR, CLASSIFY, AVERAGE_ENERGY, ALPHA]
     eff_curve_data=[distances, all_te, sim_parameters]
     if save:
-        sl.save_efficiency_curve(eff_curve_data=eff_curve_data, sim_parameters=sim_parameters)
+        sl.save_efficiency_curve(eff_curve_data=eff_curve_data, sim_parameters=sim_parameters, file_name=OUTPUT_NAME)
     
     if plot:
-        plt.plot(dists, all_te)
+        plt.plot(distances, all_te)
         plt.show()
 
     #return trigger_efficiency, opt_parameters, opt_mcm, opt_tree, all_params
@@ -404,30 +405,60 @@ def optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_i
     sim_parameters = [FAKE_TRIGGER_RATE, BURST_TIME_WINDOW, DISTANCE_TO_OPTIMIZE, SIM_MODE, ADC_MODE, DETECTOR, CLASSIFY, AVERAGE_ENERGY, ALPHA]
     eff_data = [trigger_efficiency, opt_parameters, opt_mcm, opt_tree, all_effs, sim_parameters]
     if save:
-        file_name = sl.save_efficiency_data(eff_data=eff_data, sim_parameters=sim_parameters)
-        print("Saved efficiency data to file:", file_name)
+        file_name = sl.save_efficiency_data(eff_data=eff_data, sim_parameters=sim_parameters, file_name=OUTPUT_NAME)
 
     return eff_data
 
 
-def main():
-    pass
+def parse_arguments():
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-e", "--energy", type=float, help="Average energy of the SN neutrino spectrum")
+    parser.add_argument("-a", "--alpha", type=float, help="Pinching parameter of the SN neutrino spectrum")
+    parser.add_argument("-m", "--mode", type=str, help="Simulation mode ('aronly' or 'xe')")
+    parser.add_argument("-o", "--output", type=str, help="Name of the output file for the efficiency data. If not specified, the name will be generated randomly.")
+    parser.add_argument("-d", "--dto", type=float, help="Distance to optimize for (in kpc)")
 
-if __name__ == '__main__':
-    if len(sys.argv) == 3:
-        AVERAGE_ENERGY = float(sys.argv[1])
-        ALPHA = float(sys.argv[2])
+    # TODO change this shit
+    #parser.add_argument("--params", type=str, help="Parameters file to use for the simulation (default is parameters.py)")
     
-    if len(sys.argv) == 4:
-        AVERAGE_ENERGY = float(sys.argv[1])
-        ALPHA = float(sys.argv[2])
-        SIM_MODE = sys.argv[3]
+    parser.add_argument("--eff-curve", action="store_true", help="Attemp to compute the efficiency curve vs. distance for the current parameters, if the efficiency data file exists")
+    parser.add_argument("-i", "--input", type=str, help="Name of the input file for the efficiency data, when computing the efficiency curve. If not specified, \
+                                                                    the file matching the current parameters will be used.")
 
+    args = parser.parse_args()
+
+    if args.energy:
+        global AVERAGE_ENERGY
+        AVERAGE_ENERGY = args.energy
+    if args.alpha:
+       global ALPHA
+       ALPHA = args.alpha
+    if args.mode:
+        global SIM_MODE
+        SIM_MODE = args.mode
+    if args.output:
+        global OUTPUT_NAME
+        OUTPUT_NAME = args.output
+    if args.dto:
+        global DISTANCE_TO_OPTIMIZE
+        DISTANCE_TO_OPTIMIZE = args.dto
+
+    if args.input and args.eff_curve:
+        global INPUT_NAME
+        INPUT_NAME = args.input
+    calculate_curve = args.eff_curve
+
+    return calculate_curve
+
+
+def main():
+
+    calculate_eff_curve = parse_arguments()
 
     print("START ---> ")
 
-    # Load some shit
+    # Load things
     detector = DETECTOR
 
     true_tpc_size = TRUE_TPC_SIZES[detector]
@@ -449,7 +480,7 @@ if __name__ == '__main__':
     # We need to spit the SN and BG events for training the BDT and efficiency evaluation 
     # (this is not a train/test split, that is done in the BDT training later)
     # (we don't really need to shuffle this as the loading is paralelisized anyways)
-    if CLASSIFY:
+    if CLASSIFY and not calculate_eff_curve:
         sn_train_hit_list_per_event = sn_hit_list_per_event[:int(len(sn_hit_list_per_event)*0.5)] 
         sn_hit_list_per_event = sn_hit_list_per_event[int(len(sn_hit_list_per_event)*0.5):]
         sn_train_info_per_event = sn_info_per_event[:int(len(sn_info_per_event)*0.5)]
@@ -460,27 +491,34 @@ if __name__ == '__main__':
         sn_train_hit_list_per_event = None
         sn_train_info_per_event = None
         bg_train_hit_list_per_event = None
-
-    # ------------------------------------------------------------------
-
-    eff_data, file_name = optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
-                        bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, once_a_month_rate, save=True)
-
-    eff_data, file_name = sl.load_efficiency_data(
+    
+    # The actual computation
+    if calculate_eff_curve:
+        if INPUT_NAME is None:
+            eff_data, file_name = sl.load_efficiency_data(
                     sim_parameters=[FAKE_TRIGGER_RATE, BURST_TIME_WINDOW, DISTANCE_TO_OPTIMIZE, SIM_MODE, ADC_MODE, DETECTOR, CLASSIFY, AVERAGE_ENERGY, ALPHA])
-    print(eff_data)
-    print(file_name)
+        else:
+            eff_data, file_name = sl.load_efficiency_data(file_name=INPUT_NAME)
 
-    # Once we have the trigger efficiency optimized for the desired distance, we compute it for all distances
-    efficiencies_list = []
-    distances = DISTANCES
-
-    opt_parameters = eff_data[1]
-    opt_mcm = eff_data[2]
-    opt_tree = eff_data[3]
+        distances = DISTANCES
+        opt_parameters = eff_data[1]
+        opt_mcm = eff_data[2]
+        opt_tree = eff_data[3]
   
-    dists, all_te = get_efficiency_curve(opt_parameters, sn_hit_list_per_event, sn_info_per_event, bg_hit_list_per_event, bg_length, detector, 
-                                        true_tpc_size, used_tpc_size, distances, opt_mcm, opt_tree, once_a_month_rate, number_of_tests=400)
+        eff_curve_data = get_efficiency_curve(opt_parameters, sn_hit_list_per_event, sn_info_per_event, bg_hit_list_per_event, bg_length, detector, 
+                                        true_tpc_size, used_tpc_size, distances, opt_mcm, opt_tree, once_a_month_rate, number_of_tests=400, save=True, plot=True)
+
+    else:
+        eff_data = optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
+                bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, once_a_month_rate, save=True)
+
+    
+
+
+
+if __name__ == '__main__':
+    # TODO: fix the global variables, they should be passed as arguments!
+    main()
 
 
 

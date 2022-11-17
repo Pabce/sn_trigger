@@ -38,6 +38,8 @@ BG_DATA_DIR = "/Users/pbarham/OneDrive/workspace/cern/ruth/prod_background_pds/p
 
 # Saves path for computed efficiencies, etc
 SAVE_PATH = "./saved_effs/"
+OUTPUT_NAME = None
+INPUT_NAME = None # Input for when calculating the efficiency curve
 
 # Background types
 BG_TYPES = ["Ar39GenInLAr", "Kr85GenInLAr", "Ar42GenInLAr", "K42From42ArGenInLAr", "Rn222ChainGenInLAr",
@@ -58,7 +60,7 @@ SIM_MODE = 'xe' # 'xe' or 'aronly'
 ADC_MODE = 'normal' # 'low' or 'normal'
 DETECTOR = 'VD' # 'VD' or 'HD'
 CLASSIFY = True # True or False (Do we use the BDT? If not, you should iterate over many more clustering parameters)
-DISTANCES = np.arange(4, 40, 1.5) # In kpc (distances in which to compute the efficiencies)
+DISTANCES = np.arange(4, 40, 1.5) # In kpc (list of distances in which to compute the efficiencies)
 
 # Spectrum parameters
 # GKVM 23 5

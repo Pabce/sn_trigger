@@ -380,13 +380,14 @@ def load_time_profile():
     return time_profile[1][:-1], time_profile[0][:]
 
 
-def save_efficiency_data(eff_data, sim_parameters):
+def save_efficiency_data(eff_data, sim_parameters, file_name=None):
     #ftr, btw, dist, sim_mode, adc_mode, detector, classify, avg_energy, alpha = sim_parameters
     sim_parameters = tuple(sim_parameters)
 
     # Generate a random string to identify the file
-    random_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-    file_name = "efficiency_data_" + random_string + ".pcl"
+    if file_name is None:
+        random_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        file_name = "efficiency_data_" + random_string + ".pcl"
     
     # Save this correspondence to a dictionary
     try:
@@ -409,6 +410,8 @@ def save_efficiency_data(eff_data, sim_parameters):
     # Save the data
     pickle.dump(eff_data, open("{}/{}".format(SAVE_PATH, file_name), "wb"))
 
+    print("Saved efficiency data to file:", file_name)
+
     return file_name
 
 
@@ -426,13 +429,14 @@ def load_efficiency_data(sim_parameters=[], file_name=None):
     return eff_data, file_name
 
 
-def save_efficiency_curve(eff_curve_data, sim_parameters):
+def save_efficiency_curve(eff_curve_data, sim_parameters, file_name=None):
     #ftr, btw, dist, sim_mode, adc_mode, detector, classify, avg_energy, alpha = sim_parameters
     sim_parameters = tuple(sim_parameters)
 
     # Generate a random string to identify the file
-    random_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-    file_name = "efficiency_curve_" + random_string + ".pcl"
+    if file_name is None:
+        random_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        file_name = "efficiency_curve_" + random_string + ".pcl"
     
     # Save this correspondence to a dictionary
     try:
@@ -454,6 +458,8 @@ def save_efficiency_curve(eff_curve_data, sim_parameters):
 
     # Save the data
     pickle.dump(eff_curve_data, open("{}/{}".format(SAVE_PATH, file_name), "wb"))
+
+    print("Saved efficiency curve to file:", file_name)
 
     return file_name
 

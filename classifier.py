@@ -64,7 +64,7 @@ def gradient_boosted_tree(features, targets, n_estimators=200, threshold_scan=Fa
     # print(train_targets[:10])
 
     boosted_tree = GradientBoostingClassifier(max_depth=3, n_estimators=n_estimators,
-                    loss='deviance', learning_rate=0.05, subsample=1).fit(train_features, train_targets)
+                    loss='deviance', learning_rate=0.07, subsample=1).fit(train_features, train_targets)
 
     #svm = SVC(gamma='scale', C=0.1, kernel='sigmoid').fit(train_features, train_targets)
     
