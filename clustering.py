@@ -1,3 +1,11 @@
+'''
+clustering.py
+
+This module contains the functions that implement the clustering algorithm.
+'''
+
+
+
 import numpy as np
 from parameters import *
 

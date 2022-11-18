@@ -1,3 +1,11 @@
+'''
+aux.py
+
+Bunch of auxiliary functions used in the rest of modules
+'''
+
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy

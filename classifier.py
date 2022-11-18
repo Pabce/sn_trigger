@@ -1,3 +1,10 @@
+'''
+classifier.py
+
+Contains the functions that train and apply the BDT.
+'''
+
+
 from locale import normalize
 import numpy as np
 import matplotlib.pyplot as plt

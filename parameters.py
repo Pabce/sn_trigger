@@ -1,3 +1,11 @@
+'''
+parameters.py
+
+This file contains the parameters for the algortihm run in hit_stat.py.
+Some of these are overridable by command line arguments (see hit_stat.py --help).
+'''
+
+
 import pickle
 import numpy as np
 
@@ -38,7 +46,8 @@ BG_DATA_DIR = "/Users/pbarham/OneDrive/workspace/cern/ruth/prod_background_pds/p
 
 # Saves path for computed efficiencies, etc
 SAVE_PATH = "./saved_effs/"
-OUTPUT_NAME = None
+OUTPUT_NAME_DATA = None
+OUTPUT_NAME_CURVE = None
 INPUT_NAME = None # Input for when calculating the efficiency curve
 
 # Background types
