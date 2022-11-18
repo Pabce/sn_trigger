@@ -484,10 +484,10 @@ def main():
     once_a_month_rate = FAKE_TRIGGER_RATE
 
     # Load SN and BG hits
-    sn_limit = 10 # SN_FILE_LIMIT
+    sn_limit = 30 # SN_FILE_LIMIT
     sn_total_hits, sn_hit_list_per_event, sn_info_per_event, _ = sl.load_all_sn_events_chunky(limit=sn_limit, event_num=1000, detector=detector)
 
-    bg_limit = 30 # BG_FILE_LIMIT
+    bg_limit = 50 # BG_FILE_LIMIT
     bg_length = bg_limit * BG_SAMPLE_LENGTHS[detector] # in miliseconds
     bg_total_hits, bg_hit_list_per_event, _, _, _ = sl.load_all_backgrounds_chunky_type_separated(limit=bg_limit, detector=detector)
 
@@ -540,6 +540,7 @@ def main():
 
 if __name__ == '__main__':
     # TODO: fix the global variables, they should be passed as arguments!
+    # TODO: fix weird bug where sometimes the BDT training crashes
     main()
 
 
