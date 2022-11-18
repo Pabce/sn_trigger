@@ -388,6 +388,7 @@ def load_time_profile():
     return time_profile[1][:-1], time_profile[0][:]
 
 
+#TODO: Make sim_parameters a dictionary!!!
 def save_efficiency_data(eff_data, sim_parameters, file_name=None, data_type="data"):
     #ftr, btw, dist, sim_mode, adc_mode, detector, classify, avg_energy, alpha = sim_parameters
     sim_parameters = tuple(sim_parameters)
