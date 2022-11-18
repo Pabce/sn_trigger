@@ -16,7 +16,7 @@ BG_DATA_DIR = "/eos/project-e/ep-nu/pbarhama/sn_saves/prod_background_pds/"
 ```
 (Ask me for access if you don't have it.)
 
-Other than that, the parameters you most likely will want to change are the average energy and pinching parameter $\alpha$ of the SNB spectrum. You can check `plotter_cutre.ipynb` to see how the original and interacted (flux $\cdot$ cross-section) spectra look like for different sets of the parameters. For example, the GKVM model interacted spectrum is very well approximated by:
+Other than that, the parameters you most likely will want to change are the average energy and pinching parameter $\alpha$ of the SNB spectrum. You can check `plotter_basico.ipynb` to see how the original and interacted (flux $\cdot$ cross-section) spectra look like for different sets of the parameters. For example, the GKVM model interacted spectrum is very well approximated by:
 ```python
 AVERAGE_ENERGY = 23.0 # MeV
 ALPHA = 5.0 # Dimensionless 
@@ -33,7 +33,7 @@ This will run the algorithm for the set parameters and save an output file with 
 python hit_stat.py --eff-curve
 ```
 This will load the optimized clustering parameters and BDT computed with the previous command and calculate the efficienty for a range of distances (if no file is available, it will run the whole computation).
-You can plot these efficiency curves in `plotter_cutre.ipynb` by specifying the parameters with which you run the simulation.
+You can plot these efficiency curves in `plotter_basico.ipynb` by specifying the parameters with which you run the simulation.
 
 You can override certain parameters directly from the command line, like the output file name. For more information you can run
 
