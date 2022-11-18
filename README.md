@@ -28,11 +28,11 @@ Once you have set the `parameters.py` file to your liking, you can simply run:
 ```bash
 python hit_stat.py
 ```
-This will run the algorithm for the set parameters and save an output file with the optimized clustering parameters, the efficiency data and the full list of set parameters. If you now want to generate the efficiency curve you can run
+This will run the algorithm for the set parameters and save an output file with the optimized clustering parameters, trained BDT, the efficiency data and the full list of set parameters. If you now want to generate the efficiency curve you can run:
 ```bash
 python hit_stat.py --eff-curve
 ```
-This will load the optimized clustering parameters and BDT computed with the previous command and calculate the efficienty for a range of distances (if no file is available, it will run the whole computation).
+This will load the optimized clustering parameters and BDT computed with the previous command and calculate the efficiency for a range of distances (if no file is available, it will run the whole computation).
 You can plot these efficiency curves in `plotter_basico.ipynb` by specifying the parameters with which you run the simulation.
 
 You can override certain parameters directly from the command line, like the output file name. For more information you can run
