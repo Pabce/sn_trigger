@@ -58,8 +58,8 @@ BG_TYPES = ["Ar39GenInLAr", "Kr85GenInLAr", "Ar42GenInLAr", "K42From42ArGenInLAr
 #BG_TYPES = ["Ar39GenInLAr", "Kr85GenInLAr", "Ar42GenInLAr", "Rn222ChainGenInLAr"]
 
 # Number of files to load (go pretty low on these if not sent to a job)
-SN_FILE_LIMIT = 20
-BG_FILE_LIMIT = 20
+SN_FILE_LIMIT = 60
+BG_FILE_LIMIT = 100
 
 # Algorithm parameters
 FAKE_TRIGGER_RATE = 1/(60 * 60 * 24 * 30) # 1 trigger per month
@@ -76,7 +76,7 @@ DISTANCES = np.arange(4, 40, 1.5) # In kpc (list of distances in which to comput
 # LIVERMORE 14.4 2.8
 # GARCHING 12.2 4.5
 AVERAGE_ENERGY = 23.0 # MeV
-ALPHA = 5.0 # Dimensionless 
+ALPHA = 5.0 # Dimensionless F
 
 # Clustering parameters over which to search (don't go over too many, the classification does most of the work after all...)
 MAX_CLUSTER_TIMES = [0.3] # In microseconds
