@@ -16,7 +16,7 @@ import uproot
 
 # Generate a 2d array with the distance between each pair of optical channels.
 # Also for each individual coordinate
-def generate_distance_grids(version="v5"):
+def generate_distance_grids(version="v5", detector="VD"):
 
     if version == "v4":
         uproot_coords = uproot.open("/Users/pbarham/OneDrive/workspace/cern/ruth/prod_snnue_pds/prodmarley_nue_dune10kt_vd_1x8x14_larger_lowADC_1665753396.179956833_g4_detsim_xe_reco_hist.root")["opflashana/OpDetCoords"]
@@ -27,7 +27,12 @@ def generate_distance_grids(version="v5"):
     
     elif version == "v5":
         # Load text file into numpy array, separating by columns (delimiter any number of spaces) and skipping the first row
-        coords = np.genfromtxt("../pdpos_vd1x8x14v5.dat", skip_header=1, skip_footer=2)
+        if detector == "VD":
+            file_rel = "../pdpos_vd1x8x14v5.dat"
+        elif detector == "HD":
+            file_rel = "../dunehd1x2x6PDPos.txt"
+
+        coords = np.genfromtxt(file_rel, skip_header=1, skip_footer=2)
     
         # Split into x, y, z arrays
         x = coords[:, 1]
@@ -77,10 +82,11 @@ def generate_distance_grids(version="v5"):
     
     #print(distance_array)
 
-    pickle.dump(distance_array, open("./aux_pickles/op_distance_array_VD_{}".format(version), "wb"))
-    pickle.dump(x_distance_array, open("./aux_pickles/op_x_distance_array_VD_{}".format(version), "wb"))
-    pickle.dump(y_distance_array, open("./aux_pickles/op_y_distance_array_VD_{}".format(version), "wb"))
-    pickle.dump(z_distance_array, open("./aux_pickles/op_z_distance_array_VD_{}".format(version), "wb"))
+    print("./aux_pickles/op_distance_array_{}_{}".format(detector, version))
+    pickle.dump(distance_array, open("./aux_pickles/op_distance_array_{}_{}".format(detector, version), "wb"))
+    pickle.dump(x_distance_array, open("./aux_pickles/op_x_distance_array_{}_{}".format(detector, version), "wb"))
+    pickle.dump(y_distance_array, open("./aux_pickles/op_y_distance_array_{}_{}".format(detector, version), "wb"))
+    pickle.dump(z_distance_array, open("./aux_pickles/op_z_distance_array_{}_{}".format(detector, version), "wb"))
 
     #print(y_distance_array)
 
@@ -208,7 +214,7 @@ def find_background_clusters():
 if __name__ == '__main__':
     print("SKAJHDLKSJHADLKA")
 
-    generate_distance_grids(version="v5")
+    generate_distance_grids(version="v5", detector="HD")
     exit()
 
     import save_n_load as sl

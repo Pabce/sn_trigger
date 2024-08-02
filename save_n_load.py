@@ -55,7 +55,7 @@ def load_all_backgrounds(limit=1, detector="VD"):
 
 
 def load_all_backgrounds_chunky_type_separated(limit=1, detector="VD", bg_data_dir=None, adc_mode=None, 
-                                                sim_mode=None, offset=1, bg_types=BG_TYPES, verbose=0):
+                                                sim_mode=None, offset=1, bg_types=BG_TYPES_VD, verbose=0):
     if adc_mode is None:
         adc_mode = ADC_MODE
     if sim_mode is None:
@@ -69,7 +69,7 @@ def load_all_backgrounds_chunky_type_separated(limit=1, detector="VD", bg_data_d
         if bg_data_dir:
             dir = bg_data_dir
         else:
-            dir = BG_DATA_DIR
+            dir = BG_DATA_DIR_VD
 
         for bg_type in bg_types:
             directory = os.fsencode(dir + bg_type + '/')
@@ -79,23 +79,23 @@ def load_all_backgrounds_chunky_type_separated(limit=1, detector="VD", bg_data_d
         if adc_mode == 'low':
             startswith = 'prodbg_radiological_dune10kt_vd_1x8x14_lowADC'
         elif adc_mode == 'normal':
-            startswith = 'prodbg_radiological_dune10kt_vd_1x8x14'
+            startswith = 'prodbg_radiological_decay0_vd_dune10kt_1x8x14'
 
     elif detector == 'HD':
         if bg_data_dir:
             dir = bg_data_dir
         else:
-            dir = BG_DATA_DIR # TODO: Add a specific HD BG data dir
+            dir = BG_DATA_DIR_HD
 
         for bg_type in bg_types:
             directory = os.fsencode(dir + bg_type + '/')
             directories.append(directory)
 
-        endswith = '_detsim_{}_reco_hist.root'.format(sim_mode)
+        endswith = '_detsim_reco_hist.root'
         if adc_mode == 'low':
-            startswith = 'prodbg_radiological_dune10kt_v3_hd_1x2x6'
+            startswith = 'fprodbg_radiological_dune10kt_v3_hd_1x2x6'
         elif adc_mode == 'normal':
-            startswith = 'prodbg_radiological_dune10kt_v3_hd_1x2x6'
+            startswith = 'prodbg_radiological_decay0_dune10kt_1x2x6'
 
     
     bg_total_hits_per_type = [[] for _ in range(len(bg_types))]
@@ -106,6 +106,9 @@ def load_all_backgrounds_chunky_type_separated(limit=1, detector="VD", bg_data_d
         for file in os.listdir(directory):
             filename = os.fsdecode(file)
             if filename.endswith(endswith) and filename.startswith(startswith):
+                if verbose > 1:
+                    print(filename)
+                    
                 if adc_mode == 'normal' and 'lowADC' in filename:
                     continue
                 
@@ -125,7 +128,7 @@ def load_all_backgrounds_chunky_type_separated(limit=1, detector="VD", bg_data_d
 
         with mp.Pool(mp.cpu_count()) as pool:
             # THIS IS THE NUMBER OF EVENTS IN BG FILES, REMEMBER TO CHANGE IT
-            results = pool.starmap(load_hit_data, zip(file_names, repeat(20), repeat(False)))
+            results = pool.starmap(load_hit_data, zip(file_names, repeat(20), repeat(detector), repeat(False)))
     
         for i, result in enumerate(results):
             bg_total_hits_i, bg_hit_list_per_event_i, _,  = result
@@ -134,10 +137,12 @@ def load_all_backgrounds_chunky_type_separated(limit=1, detector="VD", bg_data_d
 
         try:
             bg_total_hits_per_type[j] = np.concatenate(bg_total_hits_per_type[j], axis=0)
+            if verbose > 0:
+                print("Loaded {} background hits".format(bg_types[j]))
         except ValueError as e:
             print("No background of type {} found".format(bg_types[j]))
             print(e)
-            raise e
+            #raise e
 
     #bg_total_hits = np.concatenate(bg_total_hits, axis=0)
 
@@ -164,61 +169,10 @@ def load_all_backgrounds_chunky_type_separated(limit=1, detector="VD", bg_data_d
 
 
 
-def load_all_backgrounds_chunky(limit=1, detector="VD", type_separated=False, verbose=0):
-    bg_total_hits = []
-    bg_hit_list_per_event = []
-
-    directories = []
-    if detector == 'VD':
-        dir = BG_DATA_DIR
-
-        if type_separated:
-            for bg_type in BG_TYPES:
-                directory = os.fsencode(dir + bg_type + '/')
-                directories.append(directory)
-        else:
-            directories = [os.fsencode(dir)]
-
-        endswith = '_digi_reco_hist.root'
-        startswith = 'prodbg'
-    elif detector == 'HD':
-        dir = '../horizontaldrift/'
-        directory = os.fsencode(dir)
-        endswith = '_reco_hist.root'
-        startswith = 'hd_pbg'
-
-    file_names = []
-    i = 0
-    for j, directory in enumerate(directories):
-        for file in os.listdir(directory):
-            filename = os.fsdecode(file)
-            if filename.endswith(endswith) and filename.startswith(startswith):
-                i += 1
-                if i > limit:
-                    break
-
-                if verbose > 0:
-                    print(filename)
-                
-                filename = (dir + BG_TYPES[j] + '/' + filename) if type_separated else (dir + filename)
-                file_names.append(filename)
-    
-    with mp.Pool(mp.cpu_count()) as pool:
-        # THIS IS THE NUMBER OF EVENTS IN BG FILES, REMEMBER TO CHANGE IT
-        results = pool.starmap(load_hit_data, zip(file_names, repeat(20)))
-    
-    for i, result in enumerate(results):
-        bg_total_hits_i, bg_hit_list_per_event_i, _ = result
-        bg_total_hits.append(bg_total_hits_i)
-        bg_hit_list_per_event.extend(bg_hit_list_per_event_i)
-
-    bg_total_hits = np.concatenate(bg_total_hits, axis=0)
-
-    return bg_total_hits, bg_hit_list_per_event, None
-
 
 # Load SN events hits and neutrino (MC truth) information
-def load_all_sn_events_chunky(limit=1, event_num=1000, detector="VD", sn_data_dir=None, adc_mode=None, sim_mode=None, offset=1):
+def load_all_sn_events_chunky(limit=1, event_num=1000, detector="VD", sn_data_dir=None, adc_mode=None, sim_mode=None, offset=1, verbose=0,
+                                load_photon_info=False):
     
     if adc_mode is None:
         adc_mode = ADC_MODE
@@ -231,16 +185,19 @@ def load_all_sn_events_chunky(limit=1, event_num=1000, detector="VD", sn_data_di
     sn_total_info = []
     sn_total_info_per_event = []
 
+    total_photons_per_channel = []
+
     if detector == 'VD':
         if sn_data_dir:
             dir = sn_data_dir
         else:
-            dir = EVENT_DATA_DIR
+            dir = EVENT_DATA_DIR_VD
 
         directory = os.fsencode(dir)
         endswith = '_g4_detsim_{}_reco_hist.root'.format(sim_mode)
         info_endswith = '_stana_hist.root'
-        
+        photon_endswith = '_g4_1_hist.root'
+
         # Laura
         #endswith = '_reco_hist.root'
         #info_endswith = '_laura_hist.root'
@@ -248,21 +205,17 @@ def load_all_sn_events_chunky(limit=1, event_num=1000, detector="VD", sn_data_di
         if adc_mode == 'low':
             startswith = 'prodmarley_nue_dune10kt_vd_1x8x14_larger_lowADC'
         elif adc_mode == 'normal':
-            startswith = 'prodmarley_nue_dune10kt_vd_1x8x14_larger'
+            startswith = 'prodmarley_nue_dune10kt_vd_1x8x14'
 
     elif detector == 'HD':
         if sn_data_dir:
             dir = sn_data_dir
         else:
-            dir = EVENT_DATA_DIR # TODO: add HD data dir
+            dir = EVENT_DATA_DIR_HD 
 
         directory = os.fsencode(dir)
-        endswith = '_g4_detsim_{}_reco_hist.root'.format(sim_mode)
+        endswith = '_g4_detsim_reco_hist.root'
         info_endswith = '_stana_hist.root'
-        
-        # Laura
-        #endswith = '_reco_hist.root'
-        #info_endswith = '_laura_hist.root'
 
         if adc_mode == 'low':
             startswith = '....'
@@ -270,9 +223,9 @@ def load_all_sn_events_chunky(limit=1, event_num=1000, detector="VD", sn_data_di
             startswith = 'prodmarley_nue_dune10kt_1x2x6'
     
     file_names = []
-    info_file_names = [] 
+    info_file_names = []
+    photon_file_names = []
     i = 0
-
     # We need to make sure to read the *ana and the *reco files with the same ids!
     for file in os.listdir(directory):
         filename = os.fsdecode(file)
@@ -280,12 +233,37 @@ def load_all_sn_events_chunky(limit=1, event_num=1000, detector="VD", sn_data_di
         if filename.endswith(endswith) and filename.startswith(startswith):
             if adc_mode == 'normal' and 'lowADC' in filename:
                 continue
+            
+            if verbose > 0:
+                print(filename, i, len(os.listdir(directory)))
 
+            if i < offset:
+                i += 1
+                continue
+
+            print(i)
             # Check if we have the corresponding *ana file
             info_filename = dir + filename.replace(endswith, info_endswith)
-            
             if not os.path.isfile(info_filename):
+                print("WARNING: no corresponding *ana file")
+                if verbose > 0:
+                    print(info_filename)
                 continue # Skip if we don't have the corresponding *ana file
+            
+            if load_photon_info:
+                # Check if we have the corresponding *simphotonslite file
+                photon_filename = dir + filename.replace(endswith, photon_endswith)
+                if not os.path.isfile(photon_filename):
+                    print("WARNING: no corresponding *photon file")
+                    continue
+
+                # Skip if the file doesn't contain the tree we need
+                try:
+                    uproot_neutrino = uproot.open(photon_filename)["simphotonsana/PhotonsTree"]
+                    print("Chipmunk")
+                except uproot.exceptions.KeyInFileError:
+                    print("WARNING: corrupted *photon file")
+                    continue
 
             # Skip if the file doesn't contain the tree we need
             try:
@@ -297,10 +275,6 @@ def load_all_sn_events_chunky(limit=1, event_num=1000, detector="VD", sn_data_di
                 print("WARNING: corrupted *ana file")
                 continue
             
-            if i < offset:
-                i += 1
-                continue
-
             i += 1
             if i > limit + offset:
                 break
@@ -310,15 +284,20 @@ def load_all_sn_events_chunky(limit=1, event_num=1000, detector="VD", sn_data_di
             file_names.append(filename)
 
             info_file_names.append(info_filename)
+            if load_photon_info:
+                photon_file_names.append(photon_filename)
 
     #print("CHIRP", len(file_names), len(info_file_names))
     
     # We need to pair the results corresponding to the same ids
     with mp.Pool(mp.cpu_count()) as pool:
-        results = pool.starmap(load_sn_hit_and_neutrino_info, zip(file_names, info_file_names, repeat(event_num)))
+        if load_photon_info:
+            results = pool.starmap(load_sn_hit_and_neutrino_info, zip(file_names, info_file_names, repeat(event_num), repeat(detector), repeat(load_photon_info), photon_file_names))
+        else:
+            results = pool.starmap(load_sn_hit_and_neutrino_info, zip(file_names, info_file_names, repeat(event_num), repeat(detector)))
     
     for i, result in enumerate(results):
-        sn_total_hits_i, sn_hit_list_per_event_i, _, sn_info_i, sn_info_per_event_i = result
+        sn_total_hits_i, sn_hit_list_per_event_i, _, sn_info_i, sn_info_per_event_i, photons_per_channel = result
 
         sn_total_hits.append(sn_total_hits_i)
         sn_hit_list_per_event.extend(sn_hit_list_per_event_i)
@@ -326,20 +305,30 @@ def load_all_sn_events_chunky(limit=1, event_num=1000, detector="VD", sn_data_di
         sn_total_info.append(sn_info_i)
         sn_total_info_per_event.extend(sn_info_per_event_i)
 
+        if load_photon_info:
+            total_photons_per_channel.append(photons_per_channel)
+
     sn_total_hits = np.concatenate(sn_total_hits, axis=0)
     sn_total_info = np.concatenate(sn_total_info, axis=0)
+    if load_photon_info:
+        total_photons_per_channel = np.concatenate(total_photons_per_channel, axis=0)
 
-    return sn_total_hits, sn_hit_list_per_event, sn_total_info, sn_total_info_per_event
+    return sn_total_hits, sn_hit_list_per_event, sn_total_info, sn_total_info_per_event, total_photons_per_channel
 
 
-def load_sn_hit_and_neutrino_info(file_name, info_file_name, event_num=-1):
-    sn_total_hits, sn_hit_list_per_event, _ = load_hit_data(file_name, event_num, sn_event=True)
+def load_sn_hit_and_neutrino_info(file_name, info_file_name, event_num=-1, detector="VD", load_photon_info=False, photon_file_name=None, verbose=0):
+    sn_total_hits, sn_hit_list_per_event, _ = load_hit_data(file_name, event_num, detector, sn_event=True)
     sn_info, sn_info_per_event = load_neutrino_info(info_file_name)
 
-    return sn_total_hits, sn_hit_list_per_event, None, sn_info, sn_info_per_event
+    if load_photon_info:
+        photons_per_channel = load_g4_photon_data(photon_file_name, event_num)
+
+        return sn_total_hits, sn_hit_list_per_event, None, sn_info, sn_info_per_event, photons_per_channel
+
+    return sn_total_hits, sn_hit_list_per_event, None, sn_info, sn_info_per_event, None
 
 
-def load_hit_data(file_name="pbg_g4_digi_reco_hist.root", event_num=-1, sn_event=False, verbose=0):
+def load_hit_data(file_name="pbg_g4_digi_reco_hist.root", event_num=-1, detector="VD", sn_event=False, verbose=0):
     # The hit info is imported from a .root file.
     # From the hit info, we find the clusters
 
@@ -361,8 +350,15 @@ def load_hit_data(file_name="pbg_g4_digi_reco_hist.root", event_num=-1, sn_event
         uproot_ophit = uproot.open(file_name)["opflashana/PerOpHitTree"]
         total_hits_dict_1 = uproot_ophit.arrays(['EventID', 'HitID', 'OpChannel', 'PeakTime'], library="np")
 
-        #print(np.sort(np.unique(total_hits_dict_1['OpChannel'])))
+        # print(np.sort(np.unique(total_hits_dict_1['OpChannel'])), len(np.sort(np.unique(total_hits_dict_1['OpChannel']))))
+        # exit()
 
+        # Edit the OpChannel array for the new configuration of two channels per X-ARAPUCA (for VD only).
+        # (What used to be OpChannel 43 is now 430 and 431, etc.)
+        if detector == "VD":
+            for i in range(len(total_hits_dict_1['OpChannel'])):
+                total_hits_dict_1['OpChannel'][i] = int(total_hits_dict_1['OpChannel'][i] / 10)
+            
         total_hits_dict_1['X_OpDet_hit'] = X_COORDS[total_hits_dict_1['OpChannel']]
         total_hits_dict_1['Y_OpDet_hit'] = Y_COORDS[total_hits_dict_1['OpChannel']]
         total_hits_dict_1['Z_OpDet_hit'] = Z_COORDS[total_hits_dict_1['OpChannel']]
@@ -512,3 +508,25 @@ def load_efficiency_data(sim_parameters=[], file_name=None, data_type="data"):
 
     return eff_data, file_name
 
+
+
+# Photon information from SimPhotonsLite (before Detsim and Reco)
+
+def load_g4_photon_data(file_name, event_num):
+    uproot_simphotonsana = uproot.open(file_name)["simphotonsana/PhotonsTree"]
+    photons_dict = uproot_simphotonsana.arrays(['EventID', 'OpChannel', 'DetectedPhotonsCount'], library="np")
+    photons = [photons_dict[key] for key in photons_dict]
+
+    opchannel_num = np.max(photons_dict['OpChannel']) + 1
+
+    # Create (event_num)x(opchannel_num) matrix
+    photons_per_channel = np.zeros((event_num, opchannel_num))
+
+    for i in range(len(photons[0])):
+        event_id = photons[0][i]
+        ev = int(event_id) - 1
+
+        opchannel_id = photons[1][i]
+        photons_per_channel[ev][opchannel_id] = photons[2][i]
+
+    return photons_per_channel

@@ -409,7 +409,7 @@ def get_efficiency_curve(opt_parameters, sn_hit_list_per_event, sn_info_per_even
 
 def optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event, 
                         bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, fake_trigger_rate,
-                        max_cluster_times, max_hit_time_diffs, max_hit_distances, mcms, optimize_hyperparameters, save=True):
+                        max_cluster_times, max_hit_time_diffs, max_hit_distances, mcms, optimize_hyperparameters, verbose=1, save=True):
     
     # Add background to our SN events (this is basically useless as the SN events are so short in time)
     # for i in range(len(sn_hit_list_per_event)):
@@ -437,14 +437,22 @@ def optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_i
                                 max_y_hit_distances=max_y_hit_distances,
                                 max_z_hit_distances=max_z_hit_distances,
                                 mcms=mcms,
-                                detector=detector, verbose=1, true_tpc_size=true_tpc_size, 
+                                detector=detector, verbose=verbose, true_tpc_size=true_tpc_size, 
                                 used_tpc_size=used_tpc_size, distance_to_optimize=[DISTANCE_TO_OPTIMIZE],
                                 classify=CLASSIFY, tree=None, classifier_threshold=CLASSIFIER_THRESHOLDS,
                                 fake_trigger_rate=fake_trigger_rate, number_of_tests=300,
                                 classifier_hist_type=CLASSIFIER_HIST_TYPE,
                                 optimize_hyperparameters=optimize_hyperparameters)
 
-    ct, ht, hd, xhd, yhd, zhd, distance_to_optimize, classifier_threshold, opt_mcm = opt_parameters
+    # We attempt to extract the optimal parameters. If all efficiencies are equal to 0, this will throw an error (not exactly...).
+    # We select the first set of parameters by default
+    try:
+        ct, ht, hd, xhd, yhd, zhd, distance_to_optimize, classifier_threshold, opt_mcm = opt_parameters
+    except ValueError:
+        opt_parameters = max_cluster_times[0], max_hit_time_diffs[0], max_hit_distances[0], max_x_hit_distances[0], max_y_hit_distances[0], max_z_hit_distances[0],\
+                            DISTANCE_TO_OPTIMIZE, CLASSIFIER_THRESHOLDS[0], mcms[0]
+        ct, ht, hd, xhd, yhd, zhd, distance_to_optimize, classifier_threshold, opt_mcm = opt_parameters
+        print("----- WARNING: No optimal parameters found, using default parameters -----")
     print(all_effs, "EFF LIST")
 
     print("\n")
@@ -526,7 +534,7 @@ def load_and_split(sn_limit, bg_limit, detector):
     '''
 
     print("Loading SN data...")
-    sn_total_hits, sn_hit_list_per_event, sn_info_per_event, _ = sl.load_all_sn_events_chunky(limit=sn_limit, event_num=1000, detector=detector)
+    sn_total_hits, sn_hit_list_per_event, sn_info_per_event , _, _ = sl.load_all_sn_events_chunky(limit=sn_limit, event_num=1000, detector=detector)
 
     print("Loading BG data...")
     bg_length = bg_limit * BG_SAMPLE_LENGTHS[detector] # in miliseconds
@@ -560,6 +568,14 @@ def main():
     calculate_eff_curve, calculate_eff_curve_from_scratch = parse_arguments()
 
     print("START ---> ")
+    # Print the parameters
+    print("Parameters:")
+    print("Average energy: {} MeV".format(AVERAGE_ENERGY))
+    print("Alpha: {}".format(ALPHA))
+    print("Simulation mode: {}".format(SIM_MODE))
+    print("Detector: {}".format(DETECTOR))
+    print("Distance to optimize: {} kpc".format(DISTANCE_TO_OPTIMIZE))
+    print("-----------------")
 
     # Load things
     detector = DETECTOR
@@ -593,7 +609,7 @@ def main():
             eff_data = optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
                     bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, once_a_month_rate,
                     max_cluster_times=MAX_CLUSTER_TIMES, max_hit_time_diffs=MAX_HIT_TIME_DIFFS, max_hit_distances=MAX_HIT_DISTANCES,
-                    mcms=np.arange(LOWER_MIN_HIT_MULTUPLICITY, UPPER_MIN_HIT_MULTUPLICITY + 1), optimize_hyperparameters=False, save=True)
+                    mcms=np.arange(LOWER_MIN_HIT_MULTUPLICITY, UPPER_MIN_HIT_MULTUPLICITY + 1), optimize_hyperparameters=False, save=True, verbose=1)
 
             trigger_efficiency, opt_parameters, opt_mcm, opt_tree, all_effs, sim_parameters = eff_data
             ct, ht, hd, xhd, yhd, zhd, distance_to_optimize, classifier_threshold, mcm = opt_parameters
