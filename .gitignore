@@ -1,0 +1,10 @@
+# Ignore all saved efficiency pickles
+saved_effs
+saved_pickles
+*.pcl
+*.fcl
+*.json
+aux_data
+.vscode
+.ipynb_checkpoints
+__pycache__

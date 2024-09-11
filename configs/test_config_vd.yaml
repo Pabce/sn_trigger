@@ -1,0 +1,37 @@
+# Some configuration for the trigger algorithm
+
+IO:
+  event_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_snnue_pds/
+  bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_vd_background_juergen/
+
+Simulation:
+  # Clustering parameters over which to search for optimization
+  max_cluster_times: [0.15, 0.2] # In microseconds
+  max_hit_time_diff: [0.25, 0.20] # In microseconds
+  max_hit_distances: [200, 220] # In cm
+  lower_min_hit_multiplicity: 8 # Minimum number of hits in a cluster
+  upper_min_hit_multiplicity: 13
+  classifier_thresholds: [0.5, 0.7, 0.9]
+  classifier_hist_type: hit_multiplicity #"hit_multiplicity" or "bdt"
+  statistical_method: chi2 # TODO: add gaussian vs poissonian
+
+  # Distances over which to calculate the efficiency (if any)
+  eff_curve:
+    calculate: True
+    mode: from_scratch # from_scratch, from_data
+    distances:
+      min: 4
+      max: 40
+      step: 4
+
+  # Use BDT?
+  classify: true
+
+  # ----- Parameters below are less likely to be changed ----
+  distance_to_optimize: 20.0 # kpc
+  sim_mode: xe # 'xe' or 'aronly'
+  adc_mode: normal # Useless at this point
+
+Detector:
+  version: v6
+  
