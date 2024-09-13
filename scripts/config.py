@@ -11,16 +11,17 @@ import pickle
 import argparse
 
 class Configurator:
-    DEFAULT_CONFIG_PATH = "../configs/default_config.yaml"
+    DEFAULT_CONFIG_FILE_VD = "../configs/default_config_vd.yaml"
+    DEFAULT_CONFIG_FILE_HD = "../configs/default_config_hd.yaml"
 
-    def __init__(self, config_path="../nope.yaml", default_config_path=DEFAULT_CONFIG_PATH):
+    def __init__(self, config_path="../nope.yaml", default_config_path="../nope.yaml"):
         # Load the active config file AND the default config file, 
         # which is used to fill in missing values
         with open(default_config_path, 'r') as file:
-            self.default_config = yaml.safe_load(file)
+            self.default_yaml_dict = yaml.safe_load(file)
             
         with open(config_path, 'r') as file:
-            self.config = yaml.safe_load(file)
+            self.yaml_dict = yaml.safe_load(file)
         
         # We will also load extra arrays that are used in the simulation
         # under the "loaded" member variables
@@ -48,19 +49,34 @@ class Configurator:
     @classmethod
     def file_from_command_line(cls):
         config_path = cls.parse_arguments()
-        return cls(config_path=config_path)
+
+        # Get the default config file from the active config file
+        with open(config_path, 'r') as file:
+            temp_yaml_dict = yaml.safe_load(file)
+
+            # If the default config file is "None", use the active config file as the default
+            if temp_yaml_dict["DEFAULT_CONFIG_FILE"] == "None":
+                default_config_path = config_path
+            else:
+                default_config_path = temp_yaml_dict["DEFAULT_CONFIG_FILE"]
+
+        return cls(config_path=config_path, default_config_path=default_config_path)
     
-    # Constructor for using the default config file
+    # Constructor for using the default config file for either detector
     @classmethod
-    def default_config(cls):
-        return cls(config_path=cls.DEFAULT_CONFIG_PATH)
-        
+    def detector_default(cls, detector_type):
+        if detector_type == "VD":
+            return cls(config_path=cls.DEFAULT_CONFIG_FILE_VD, default_config_path=cls.DEFAULT_CONFIG_FILE_VD)
+        elif detector_type == "HD":
+            return cls(config_path=cls.DEFAULT_CONFIG_FILE_HD, default_config_path=cls.DEFAULT_CONFIG_FILE_HD)
+        else:
+            raise ValueError("Invalid detector type")
 
     def get(self, *keys, default=None):
         # Get the value from the active config file if it exists, 
         # otherwise get it from the default config file
-        value = self.config
-        default_value = self.default_config
+        value = self.yaml_dict
+        default_value = self.default_yaml_dict
         try:
             for key in keys:
                 value = value[key]
@@ -77,35 +93,35 @@ class Configurator:
     
     def set_value(self, *keys, value):
         # Set a value in the active config file
-        config = self.config
-        default_config = self.default_config
+        yaml_dict = self.yaml_dict
+        default_yaml_dict = self.default_yaml_dict
 
         try:
             for key in keys[:-1]:
-                config = config[key]
+                yaml_dict = yaml_dict[key]
         except KeyError:
             # If we can't find the key in the active config file,
             # we look in the default config file
-            config = default_config
+            yamñ_dict = default_yaml_dict
             for key in keys[:-1]:
-                if key in config:
-                    config = config[key]
+                if key in yaml_dict:
+                    yaml_dict = yaml_dict[key]
                 else:
                     raise KeyError(f"Configuration value {keys} not found in active or default config file")
 
-        config[keys[-1]] = value
+        yaml_dict[keys[-1]] = value
 
         # Just in case we have modified a relevant path, we reload the coordinates
         self.load_coodinates()
 
-    
+    # TODO: make the file names configurable
     def load_coordinate_arrays(self, detector):
         if detector == "VD":
             file = self.get("IO", "aux_coordinate_dir") + "pdpos_vd1x8x14v5.dat"
         elif detector == "HD":
             file = self.get("IO", "aux_coordinate_dir") + "pdpos_hd1x2x6.dat"
 
-        print("Loading coordinates from file: ", file)
+        print("Loading detector coordinates from file: ", file)
         coords = np.genfromtxt(file, skip_header=1, skip_footer=2)
 
         # Split into x, y, z arrays
@@ -119,6 +135,7 @@ class Configurator:
         file_dir = self.get("IO", "aux_data_dir")
         geometry_version = self.get("Detector", "geometry_version")
 
+        # TODO: switch from pickle to text file, make function to create these accessible
         op_distance_array = pickle.load(open("{}/op_distance_array_{}_{}".format(file_dir, detector, geometry_version), "rb"))
         op_x_distance_array = pickle.load(open("{}/op_x_distance_array_{}_{}".format(file_dir, detector, geometry_version), "rb"))
         op_y_distance_array = pickle.load(open("{}/op_y_distance_array_{}_{}".format(file_dir, detector, geometry_version), "rb"))
@@ -132,7 +149,7 @@ class Configurator:
 
         # For now, only one argument (the configuration file path) is needed
         # TODO: add the possibility to override configuration values from the command line
-        parser.add_argument("--config", type=str, help="Path to the configuration file")
+        parser.add_argument("-c", "--config", type=str, help="Path to the configuration file")
 
         args = parser.parse_args()
 
@@ -146,7 +163,7 @@ class Configurator:
 
 # Example usage
 if __name__ == "__main__":
-    config_instance = Config("../configs/test_config_vd.yaml", "../configs/default_config.yaml")
+    config_instance = Configurator("../configs/test_config_vd.yaml", "../configs/default_config.yaml")
 
     print(type(config_instance.config))
     print(config_instance)

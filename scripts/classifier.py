@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import pickle
 
 from sklearn import tree
-from sklearn.experimental import enable_hist_gradient_boosting
+# from sklearn.experimental import enable_hist_gradient_boosting
 from sklearn.experimental import enable_halving_search_cv
 from sklearn.metrics import zero_one_loss, confusion_matrix
 from sklearn.model_selection import train_test_split, HalvingRandomSearchCV

@@ -23,6 +23,8 @@ import itertools
 from itertools import repeat
 import multiprocessing as mp
 import random
+from rich.console import Console
+from rich.table import Table
 
 import classifier
 import aux 
@@ -534,33 +536,38 @@ def main():
     # And create the configuration class, including the "loaded" parameters
     config = cf.Configurator.file_from_command_line() # Instance of the config class
 
-    print("START ---> ")
-    # Print the parameters
-    print("Parameters:")
-    print("Average energy: {} MeV".format(config.get('Physics', 'neutrino_flux', 'average_energy')))
-    print("Alpha: {}".format(config.get('Physics', 'neutrino_flux', 'average_energy')))
-    print("Simulation mode: {}".format(config.get('Simulation', 'sim_mode')))
-    print("Detector: {}".format(config.get('Detector', 'type')))
-    print("Distance to optimize: {} kpc".format(config.get('Simulation', 'distance_to_optimize')))
-    print("-----------------")
+    console = Console()
 
-    # TODO: Rethink if you should need to pass VD/HD for each parameter or just write one per config file
-    # Load things
-    detector_type = config.get('Detector', 'type')
+    console.log('--- START --->', style="bold green")
+    console.print(":chipmunk:  Let's get started! :chipmunk:", style="bold yellow")
+    
+    # Create a table to display the parameters
+    table = Table(title="Parameters", title_style="bold magenta")
+    table.add_column("Parameter", style="cyan", no_wrap=True)
+    table.add_column("Value", style="magenta")
 
-    true_tpc_size = config.get('Detector', 'true_tpc_sizes', detector_type) * config.get('Detector', 'tpc_size_correction_factor')
-    used_tpc_size = config.get('Detector', 'used_tpc_sizes', detector_type) * config.get('Detector', 'tpc_size_correction_factor')
+    table.add_row("Average energy", f"{config.get('Physics', 'neutrino_flux', 'average_energy')} MeV")
+    table.add_row("Alpha", f"{config.get('Physics', 'neutrino_flux', 'alpha')}")
+    table.add_row("Simulation mode", f"{config.get('Simulation', 'sim_mode')}")
+    table.add_row("Detector", f"{config.get('Detector', 'type')}")
+    table.add_row("Distance to optimize", f"{config.get('Simulation', 'distance_to_optimize')} kpc")
+    console.print(table)
+
+    # Load parameters from the configuration file
+    true_tpc_size = config.get('Detector', 'true_tpc_size') * config.get('Detector', 'tpc_size_correction_factor')
+    used_tpc_size = config.get('Detector', 'used_tpc_size') * config.get('Detector', 'tpc_size_correction_factor')
     once_a_month_rate = config.get('Simulation', 'fake_trigger_rate')
 
-    # Load SN and BG hits for the optimal parameter search
+    # Load SN and BG hits for the parameter search
     sn_file_limit_parameter_search = config.get('Simulation', 'sn_file_limit_parameter_search')
     bg_file_limit_parameter_search = config.get('Simulation', 'bg_file_limit_parameter_search')
 
     # Create a dataloader object
     loader = dl.DataLoader(config)
 
-    sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event, bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length =\
-        loader.load_and_split(sn_file_limit_parameter_search, sn_file_limit_parameter_search, detector_type)
+    sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event,\
+    sn_train_info_per_event, bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length =\
+        loader.load_and_split(sn_file_limit_parameter_search, bg_file_limit_parameter_search)
     
     exit("STOP")
     # The actual computation

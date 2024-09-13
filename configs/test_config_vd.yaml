@@ -1,5 +1,9 @@
 # Some configuration for the trigger algorithm
 
+# Default config file. 
+# The values not explicitly declared in this file will be pulled from this config.
+DEFAULT_CONFIG_FILE: default_config_vd.yaml
+
 IO:
   event_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_snnue_pds/
   bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_vd_background_juergen/

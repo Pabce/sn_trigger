@@ -15,6 +15,13 @@ import random
 import string
 import pickle
 from sys import exit
+import logging
+
+import rich
+from rich.progress import track, Progress, TextColumn, TimeElapsedColumn,\
+    BarColumn, TaskProgressColumn, TimeRemainingColumn, MofNCompleteColumn
+from rich.logging import RichHandler
+import gui
 
 #from parameters import *
 
@@ -23,7 +30,22 @@ class DataLoader:
     def __init__(self, config):
         self.config = config
 
-    def load_and_split(self, sn_limit, bg_limit, detector):
+        logging.basicConfig(
+            level=logging.INFO, 
+            format="%(message)s", 
+            datefmt="[%X]", 
+            handlers=[RichHandler(rich_tracebacks=True)]
+        )
+        self.log = logging.getLogger("rich")
+
+        # self.log.debug("This is a debug message")
+        # self.log.info("Hello, World!")
+        # self.log.warning("This is a warning")
+        # self.log.error("This is an error")
+        # self.log.exception("This is an exception")
+
+
+    def load_and_split(self, sn_limit, bg_limit):
         '''
         Load the signal and backgrounds and split them into train adn efficiency computation sets
         '''
@@ -31,14 +53,15 @@ class DataLoader:
         # Config reads ----
         # ENERGY LIMIT TO TRAIN THE BDT
         bdt_energy_limit = self.config.get("Simulation", "bdt", "energy_limit")
-
+        bg_sample_length = self.config.get("IO", "bg_sample_length")
+        bg_sample_number_per_file = self.config.get("IO", "bg_sample_number_per_file")
         # -----------------
 
-        print("Loading SN data...")
+        self.log.info("Loading SN data...")
         sn_total_hits, sn_hit_list_per_event, sn_info_per_event , _, _ = self.load_all_sn_events_chunky(limit=sn_limit, event_num=1000)
 
-        print("Loading BG data...")
-        bg_length = bg_limit * BG_SAMPLE_LENGTHS[detector] # in miliseconds
+        self.log.info("Loading BG data...")
+        bg_length = bg_limit * bg_sample_length * bg_sample_number_per_file # in miliseconds
         bg_total_hits, bg_hit_list_per_event, _, _, _ = self.load_all_backgrounds_chunky_type_separated(limit=bg_limit)
 
 
@@ -65,42 +88,54 @@ class DataLoader:
 
     def load_all_backgrounds_chunky_type_separated(self, limit=1, offset=0, verbose=0):
         # Config reads ----
-
-        detector = self.config.get("Detector", "type")
+        detector_type = self.config.get("Detector", "type")
         bg_data_dir = self.config.get("IO", "bg_data_dir")
         adc_mode = self.config.get("Simulation", "adc_mode")
         sim_mode = self.config.get("Simulation", "sim_mode")
-        bg_types = self.config.get("Backgrounds", detector)
+        bg_types = self.config.get("Backgrounds")
+        bg_sample_number_per_file = self.config.get("IO", "bg_sample_number_per_file")
+        startswith = self.config.get("IO", "bg_hit_file_start_pattern")
+        endswith = self.config.get("IO", "bg_hit_file_end_pattern").format(sim_mode)
+        # -----------------
+        
+        directories = []
+        for bg_type in bg_types:
+            #directory = os.fsencode(bg_data_dir + bg_type + '/')
+            directory = bg_data_dir + bg_type + '/'
+            directories.append(directory)
 
+        # Collect valid file names
+        for j, directory in enumerate(directories):
+            print(directory, type(directory))
+            reco_file_names, _, _ = self.collect_valid_file_names(
+                directory,
+                startswith,
+                endswith,
+                limit=limit,
+                offset=offset,
+            )
+
+        # Collect valid file names
+
+    def load_all_backgrounds_chunky_type_separated_old(self, limit=1, offset=0, verbose=0):
+        # Config reads ----
+        detector_type = self.config.get("Detector", "type")
+        bg_data_dir = self.config.get("IO", "bg_data_dir")
+        adc_mode = self.config.get("Simulation", "adc_mode")
+        sim_mode = self.config.get("Simulation", "sim_mode")
+        bg_types = self.config.get("Backgrounds")
+        bg_sample_number_per_file = self.config.get("IO", "bg_sample_number_per_file")
+        startswith = self.config.get("IO", "bg_hit_file_start_pattern")
+        endswith = self.config.get("IO", "bg_hit_file_end_pattern").format(sim_mode)
         # -----------------
 
         bg_total_hits = []
         bg_hit_list_per_event = []
 
         directories = []
-        if detector == 'VD':
-            dir = bg_data_dir
-            for bg_type in bg_types:
-                directory = os.fsencode(dir + bg_type + '/')
-                directories.append(directory)
-
-            endswith = '_detsim_{}_reco_hist.root'.format(sim_mode)
-            if adc_mode == 'low':
-                startswith = 'prodbg_radiological_dune10kt_vd_1x8x14_lowADC'
-            elif adc_mode == 'normal':
-                startswith = 'prodbg_radiological_decay0_vd_dune10kt_1x8x14'
-
-        elif detector == 'HD':
-            dir = bg_data_dir
-            for bg_type in bg_types:
-                directory = os.fsencode(dir + bg_type + '/')
-                directories.append(directory)
-
-            endswith = '_detsim_reco_hist.root'
-            if adc_mode == 'low':
-                startswith = 'fprodbg_radiological_dune10kt_v3_hd_1x2x6'
-            elif adc_mode == 'normal':
-                startswith = 'prodbg_radiological_decay0_dune10kt_1x2x6'
+        for bg_type in bg_types:
+            directory = os.fsencode(bg_data_dir + bg_type + '/')
+            directories.append(directory)
 
         
         bg_total_hits_per_type = [[] for _ in range(len(bg_types))]
@@ -111,11 +146,6 @@ class DataLoader:
             for file in os.listdir(directory):
                 filename = os.fsdecode(file)
                 if filename.endswith(endswith) and filename.startswith(startswith):
-                    if verbose > 1:
-                        print(filename)
-                        
-                    if adc_mode == 'normal' and 'lowADC' in filename:
-                        continue
                     
                     if k < offset:
                         k += 1
@@ -128,12 +158,12 @@ class DataLoader:
                     if verbose > 0:
                         print(filename)
                     
-                    filename = dir + bg_types[j] + '/' + filename
+                    filename = bg_data_dir + bg_types[j] + '/' + filename
                     file_names.append(filename)
 
             with mp.Pool(mp.cpu_count()) as pool:
-                # THIS IS THE NUMBER OF EVENTS IN BG FILES, REMEMBER TO CHANGE IT
-                results = pool.starmap(self.load_hit_data, file_names, repeat(20), repeat(False))
+                # TODO: THIS IS THE NUMBER OF EVENTS IN BG FILES, REMEMBER TO CHANGE IT
+                results = pool.starmap(self.load_hit_data, zip(file_names, repeat(bg_sample_number_per_file), repeat(False)) )
         
             for i, result in enumerate(results):
                 bg_total_hits_i, bg_hit_list_per_event_i, _,  = result
@@ -174,128 +204,246 @@ class DataLoader:
 
 
     # Load SN events hits and neutrino (MC truth) information
-    def load_all_sn_events_chunky(self, load_photon_info=False, limit=1, event_num=1000, offset=0, verbose=0):
-        # Config reads ----
+    def load_all_sn_events_chunky(self, load_photon_info=False, limit=1, event_num=1000, offset=0):
+        """
+        Load Supernova event hits and neutrino (MC truth) information.
 
-        detector = self.config.get("Detector", "type")
+        Args:
+            load_photon_info (bool): Whether to load photon information.
+            limit (int): Maximum number of events to load.
+            event_num (int): Number of events per file to consider.
+            offset (int): Number of files to skip before starting.
+            verbose (int): Verbosity level.
+
+        Returns:
+            tuple: (sn_total_hits, sn_hit_list_per_event, sn_total_info,
+                    sn_total_info_per_event, total_photons_per_channel)
+        """
+
+        # Config reads ----
+        detector_type = self.config.get("Detector", "type")
         sn_data_dir = self.config.get("IO", "sn_data_dir")
         adc_mode = self.config.get("Simulation", "adc_mode")
         sim_mode = self.config.get("Simulation", "sim_mode")
-
+        startswith = self.config.get("IO", "sn_hit_file_start_pattern")
+        endswith = self.config.get("IO", "sn_hit_file_end_pattern").format(sim_mode)
+        info_endswith = self.config.get("IO", "sn_info_file_end_pattern")
+        photon_endswith = self.config.get("IO", "photon_file_end_pattern")
+        #TODO: add to read: the number of events per file
         # -----------------
 
-        sn_total_hits = []
-        sn_hit_list_per_event = []
+        # Collect valid file names
+        reco_file_names, info_file_names, photon_file_names = self.collect_valid_file_names(
+            sn_data_dir,
+            startswith,
+            endswith,
+            info_endswith,
+            photon_endswith,
+            load_photon_info,
+            limit,
+            offset,
+            event_num,
+        )
 
-        sn_total_info = []
-        sn_total_info_per_event = []
+        # Process files in parallel
+        results = self.process_files_in_parallel(
+            reco_file_names,
+            info_file_names,
+            photon_file_names,
+            event_num,
+            load_photon_info,
+        )
 
-        total_photons_per_channel = []
+        # Accumulate results
+        (
+            sn_total_hits,
+            sn_hit_list_per_event,
+            sn_total_info,
+            sn_total_info_per_event,
+            total_photons_per_channel,
+        ) = self.accumulate_results(results, load_photon_info)
 
-        if detector == 'VD':
-            dir = sn_data_dir
-            directory = os.fsencode(dir)
-            endswith = '_g4_detsim_{}_reco_hist.root'.format(sim_mode)
-            info_endswith = '_stana_hist.root'
-            photon_endswith = '_g4_1_hist.root'
+        return (
+            sn_total_hits,
+            sn_hit_list_per_event,
+            sn_total_info,
+            sn_total_info_per_event,
+            total_photons_per_channel,
+        )
 
-            # Laura
-            #endswith = '_reco_hist.root'
-            #info_endswith = '_laura_hist.root'
+    def collect_valid_file_names(self, data_dir, startswith, endswith, 
+                                info_endswith=None, photon_endswith=None, 
+                                load_photon_info=False, limit=1, offset=0, 
+                                event_num=1000, data_type_str="Chipmonc"):
+        """
+        Collect valid file names from the SN or BG data directory.
 
-            if adc_mode == 'low':
-                startswith = 'prodmarley_nue_dune10kt_vd_1x8x14_larger_lowADC'
-            elif adc_mode == 'normal':
-                startswith = 'prodmarley_nue_dune10kt_vd_1x8x14'
+        Args:
+            data_dir (str): Path to the SN/BG data directory.
+            startswith (str): Start pattern for hit files.
+            endswith (str): End pattern for hit files.
+            info_endswith (str): End pattern for info files (*ana files).
+            photon_endswith (str): End pattern for photon files.
+            load_photon_info (bool): Whether to load photon info.
+            limit (int): Maximum number of files to collect.
+            offset (int): Number of files to skip before starting.
+            event_num (int): Number of events per file to consider.
+            verbose (int): Verbosity level.
 
-        elif detector == 'HD':
-            dir = sn_data_dir
-
-            directory = os.fsencode(dir)
-            endswith = '_g4_detsim_reco_hist.root'
-            info_endswith = '_stana_hist.root'
-
-            if adc_mode == 'low':
-                startswith = '....'
-            elif adc_mode == 'normal':
-                startswith = 'prodmarley_nue_dune10kt_1x2x6'
-        
-        file_names = []
+        Returns:
+            tuple: Lists of hit filenames, info filenames, and photon filenames.
+        """
+        reco_file_names = []
         info_file_names = []
         photon_file_names = []
-        i = 0
-        # We need to make sure to read the *ana and the *reco files with the same ids!
-        for file in os.listdir(directory):
-            filename = os.fsdecode(file)
 
-            if filename.endswith(endswith) and filename.startswith(startswith):
-                if adc_mode == 'normal' and 'lowADC' in filename:
-                    continue
-                
-                if verbose > 0:
-                    print(filename, i, len(os.listdir(directory)))
+        processed_files = 0
+        with gui.get_custom_progress() as progress:
+            task = progress.add_task(f'[cyan]Finding {data_type_str} files and verifying integrity...', total=limit)
 
-                if i < offset:
-                    i += 1
+            for filename in os.listdir(data_dir):
+                filename = os.fsdecode(filename)
+
+                if not (filename.startswith(startswith) and filename.endswith(endswith)):
                     continue
 
-                print(i)
-                # Check if we have the corresponding *ana file
-                info_filename = dir + filename.replace(endswith, info_endswith)
-                if not os.path.isfile(info_filename):
-                    print("WARNING: no corresponding *ana file")
-                    if verbose > 0:
-                        print(info_filename)
-                    continue # Skip if we don't have the corresponding *ana file
-                
-                if load_photon_info:
-                    # Check if we have the corresponding *simphotonslite file
-                    photon_filename = dir + filename.replace(endswith, photon_endswith)
-                    if not os.path.isfile(photon_filename):
-                        print("WARNING: no corresponding *photon file")
-                        continue
+                if processed_files < offset:
+                    processed_files += 1
+                    continue
 
-                    # Skip if the file doesn't contain the tree we need
-                    try:
-                        uproot_neutrino = uproot.open(photon_filename)["simphotonsana/PhotonsTree"]
-                        print("Chipmunk")
-                    except uproot.exceptions.KeyInFileError:
-                        print("WARNING: corrupted *photon file")
-                        continue
+                self.log.info(f"Validating file: {filename}")
 
-                # Skip if the file doesn't contain the tree we need
+                # Check if hit file contains required tree
+                reco_filename = data_dir + filename
                 try:
-                    uproot_neutrino = uproot.open(info_filename)["analysistree/anatree"]
-                    # Skip if the tree has less entries than the event number we need
-                    if len(uproot_neutrino['enu_truth'].array()) < event_num:
-                        continue
-                except uproot.exceptions.KeyInFileError:
-                    print("WARNING: corrupted *ana file")
+                    uproot_ophit = uproot.open(reco_filename)["opflashana/PerOpHitTree"]
+                except uproot.exceptions.KeyInFileError as e:
+                    logging.warning(f"Corrupted *reco file {filename}: {e}. Skipping.")
                     continue
-                
-                i += 1
-                if i > limit + offset:
-                    break
-                #print(filename)
-                
-                filename = dir + filename 
-                file_names.append(filename)
 
-                info_file_names.append(info_filename)
+                reco_file_names.append(reco_filename)
+
+                # Check if corresponding *ana file exists (if required)
+                if info_endswith:
+                    info_filename = data_dir + filename.replace(endswith, info_endswith)
+                    if not os.path.isfile(info_filename):
+                        self.log.warning(f"No corresponding *ana file for {filename}. Skipping.")
+                        continue
+
+                    # Check if ana file contains required tree
+                    try:
+                        uproot_neutrino = uproot.open(info_filename)["analysistree/anatree"]
+                        # Skip if the tree has less entries than the event number we need
+                        if len(uproot_neutrino['enu_truth'].array()) < event_num:
+                            raise uproot.exceptions.KeyInFileError
+                    except uproot.exceptions.KeyInFileError as e:
+                        logging.warning(f"Corrupted *ana file {info_filename}: {e}. Skipping.")
+                        continue
+                    
+                    info_file_names.append(info_filename)
+                
+                # Check if corresponding photon file exists (if required)
+                photon_filename = None
                 if load_photon_info:
-                    photon_file_names.append(photon_filename)
+                    photon_filename = os.path.join(
+                        data_dir, filename.replace(endswith, photon_endswith)
+                    )
+                    if not os.path.isfile(photon_filename):
+                        self.log.warning(f"No corresponding *photon file for {filename}. Skipping.")
+                        continue
+                    # Check if photon file contains required tree
+                    try:
+                        uproot_file = uproot.open(photon_filename)
+                        uproot_file["simphotonsana/PhotonsTree"]
+                    except Exception as e:
+                        self.log.warning(f"Corrupted *photon file {photon_filename}: {e}. Skipping.")
+                        continue
 
-        #print("CHIRP", len(file_names), len(info_file_names))
-        
+                    photon_file_names.append(photon_filename)
+                
+                # --------------------------------
+
+                processed_files += 1
+                if processed_files > limit + offset:
+                    break
+
+                progress.update(task, advance=1)
+
+        return reco_file_names, info_file_names, photon_file_names
+
+    def process_files_in_parallel(self, file_names, info_file_names,
+                                   photon_file_names, event_num, load_photon_info):
+        """
+        Process the collected files in parallel.
+
+        Args:
+            file_names (list): List of hit filenames.
+            info_file_names (list): List of info filenames.
+            photon_file_names (list): List of photon filenames.
+            event_num (int): Number of events per file to consider.
+            load_photon_info (bool): Whether to load photon info.
+            verbose (int): Verbosity level.
+
+        Returns:
+            list: Results from processing each file.
+        """
+        num_processes = mp.cpu_count()
+
         # We need to pair the results corresponding to the same ids
-        with mp.Pool(mp.cpu_count()) as pool:
-            if load_photon_info:
-                results = pool.starmap(self.load_snhit_and_neutrino_info, file_names, info_file_names, repeat(event_num), repeat(load_photon_info), photon_file_names)
-            else:
-                results = pool.starmap(self.load_sn_hit_and_neutrino_info, file_names, info_file_names, repeat(event_num))
-        
-        for i, result in enumerate(results):
-            sn_total_hits_i, sn_hit_list_per_event_i, _, sn_info_i, sn_info_per_event_i, photons_per_channel = result
+        with gui.get_custom_progress() as progress:
+            task = progress.add_task("[cyan]Loading SN data (in parallel)...", total=len(file_names))
+            with mp.Pool(num_processes) as pool:
+                results = []
+                if load_photon_info:
+                    args = zip(
+                        file_names,
+                        info_file_names,
+                        repeat(event_num),
+                        repeat(load_photon_info),
+                        photon_file_names,
+                    )
+                else:
+                    args = zip(
+                        file_names,
+                        info_file_names,
+                        repeat(event_num),
+                        repeat(load_photon_info),
+                    )
+
+                imap_results = pool.imap_unordered(self.wrapped_load_sn_hit_and_neutrino_info, args)
+
+                for result in imap_results:
+                    progress.update(task, advance=1)
+                    results.append(result)
+
+            return results
+
+    def accumulate_results(self, results, load_photon_info):
+        """
+        Accumulate results from processing files.
+
+        Args:
+            results (list): List of results from each file.
+            load_photon_info (bool): Whether photon info was loaded.
+
+        Returns:
+            tuple: Accumulated data arrays and lists.
+        """
+        sn_total_hits = []
+        sn_hit_list_per_event = []
+        sn_total_info = []
+        sn_total_info_per_event = []
+        total_photons_per_channel = []
+
+        for result in results:
+            (
+                sn_total_hits_i,
+                sn_hit_list_per_event_i,
+                _,
+                sn_info_i,
+                sn_info_per_event_i,
+                photons_per_channel,
+            ) = result
 
             sn_total_hits.append(sn_total_hits_i)
             sn_hit_list_per_event.extend(sn_hit_list_per_event_i)
@@ -303,30 +451,42 @@ class DataLoader:
             sn_total_info.append(sn_info_i)
             sn_total_info_per_event.extend(sn_info_per_event_i)
 
-            if load_photon_info:
+            if load_photon_info and photons_per_channel is not None:
                 total_photons_per_channel.append(photons_per_channel)
 
         sn_total_hits = np.concatenate(sn_total_hits, axis=0)
         sn_total_info = np.concatenate(sn_total_info, axis=0)
-        if load_photon_info:
+
+        if load_photon_info and total_photons_per_channel:
             total_photons_per_channel = np.concatenate(total_photons_per_channel, axis=0)
+        else:
+            total_photons_per_channel = None
 
-        return sn_total_hits, sn_hit_list_per_event, sn_total_info, sn_total_info_per_event, total_photons_per_channel
+        return (
+            sn_total_hits,
+            sn_hit_list_per_event,
+            sn_total_info,
+            sn_total_info_per_event,
+            total_photons_per_channel,
+        )
 
 
-    def load_sn_hit_and_neutrino_info(self, file_name, info_file_name, event_num=-1, load_photon_info=False, photon_file_name=None, verbose=0):
+
+    def load_sn_hit_and_neutrino_info(self, file_name, info_file_name, event_num=-1, load_photon_info=False, photon_file_name=None):
         sn_total_hits, sn_hit_list_per_event, _ = self.load_hit_data(file_name, event_num, sn_event=True)
-        sn_info, sn_info_per_event = load_neutrino_info(info_file_name)
+        sn_info, sn_info_per_event = self.load_neutrino_info(info_file_name)
 
         if load_photon_info:
-            photons_per_channel = load_g4_photon_data(photon_file_name, event_num)
+            photons_per_channel = self.load_g4_photon_data(photon_file_name, event_num)
 
             return sn_total_hits, sn_hit_list_per_event, None, sn_info, sn_info_per_event, photons_per_channel
 
         return sn_total_hits, sn_hit_list_per_event, None, sn_info, sn_info_per_event, None
 
-    # TODO: find a smart way to pass the X_COORDS, etc, as arguments (e.g. just pass the subset of the config where the loaded data is contained?)
-    def load_hit_data(self, file_name="pbg_g4_digi_reco_hist.root", event_num=-1, sn_event=False, verbose=0):
+    def wrapped_load_sn_hit_and_neutrino_info(self, arg_list):
+            return self.load_sn_hit_and_neutrino_info(*arg_list)
+    
+    def load_hit_data(self, file_name="pbg_g4_digi_reco_hist.root", event_num=-1, sn_event=False):
         # The hit info is imported from a .root file.
         # From the hit info, we find the clusters
 
@@ -338,10 +498,9 @@ class DataLoader:
         x_coords = self.config.loaded["x_coords"]
         y_coords = self.config.loaded["y_coords"]
         z_coords = self.config.loaded["z_coords"]
-        # -----------------
+        # ----------------- 
 
-        if verbose > 0:
-            print(file_name, mp.current_process())
+        self.log.debug(f"Loading hit data from file: {file_name}")
 
         # TODO: fix this bullshit for Laura's files
         try:
@@ -376,7 +535,7 @@ class DataLoader:
             total_hits = [total_hits_dict[key] for key in total_hits_dict]
             total_hits = np.array(total_hits).T
 
-        hit_list_per_event, hit_num_per_channel = process_hit_data(total_hits, event_num)
+        hit_list_per_event, hit_num_per_channel = self.process_hit_data(total_hits, event_num)
 
         return total_hits, hit_list_per_event, hit_num_per_channel
 
@@ -447,7 +606,7 @@ class DataLoader:
     # TIME PROFILE IS IN MS!!!!
     def load_time_profile(self):
         data_dir = self.config.get("IO", "aux_data_dir")
-        uproot_time_profile = uproot.open(aux_data_dir + "TimeProfile.root")["h_MarlTime"]
+        uproot_time_profile = uproot.open(data_dir + "TimeProfile.root")["h_MarlTime"]
         time_profile = uproot_time_profile.to_numpy()
 
         # print(time_profile[0].shape)
