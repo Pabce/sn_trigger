@@ -1,26 +1,9 @@
-# Base configuration file for the trigger algorithm - VD
-
-DEFAULT_CONFIG_FILE: None
+# Base configuration for the trigger algorithm
 
 IO:
   sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_snnue_pds/
-  sn_event_number_per_file: 1000
-  sn_hit_file_start_pattern: 'prodmarley_nue_dune10kt_vd_1x8x14'
-  sn_hit_file_end_pattern: '_g4_detsim_{}_reco_hist.root'
-  sn_info_file_end_pattern: '_stana_hist.root'
-  photon_file_end_pattern: 'NOTHING'
-
   bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_vd_background_juergen/
-  # Length of the background samples in ms
-  bg_sample_length: 8.5
-  bg_sample_number_per_file: 20
-  bg_hit_file_start_pattern: 'prodbg_radiological_decay0_vd_dune10kt_1x8x14'
-  bg_hit_file_end_pattern: '_detsim_{}_reco_hist.root'
-
-  load_data_in_parallel: True
-
-  efficiency_save_dir: ../saved_effs/
-  pickle_save_dir: ../saved_pickles/
+  save_dir: /eos/home-p/pbarhama/myway/saved_effs/
 
   output_name_data: None
   output_name_curve: None
@@ -37,15 +20,17 @@ Detector:
   type: VD
   geometry_version: v5 # this now does nothing
   # Used volume in real-life TPCs
-  true_tpc_size: 10
+  true_tpc_sizes: 
+    VD: 10
+    HD: 10
   # Used volume for the simulation geometries
-  used_tpc_size: 2.6
+  used_tpc_sizes:
+    VD: 2.6
+    HD: 1.2
   # Correcting for the fact that TPCs are actually a bit bigger than 10kt
   tpc_size_correction_factor: 1.2
   # Correction for extra volume outside of the active volume (buffer region)
   sn_event_multiplier: 1.17
-  # Number of optical channels
-  optical_channel_number: 184
 
 Physics:
   # Pinching parameters (neutrino flux)
@@ -65,12 +50,12 @@ Physics:
     GARCHING: 882
 
 Simulation:
-  # Number of files to load (will be used for efficiency estimation once optimal parameters are found)
+  # Number of files to load for parameter search
+  sn_file_limit_parameter_search: 10
+  bg_file_limit_parameter_search: 20
+  # Number of files to load for efficiency estimation once optimal parameters are found
   sn_file_limit: 10
   bg_file_limit: 20
-  # Number of files to load for parameter search
-  sn_file_limit_parameter_search: 140
-  bg_file_limit_parameter_search: 40
 
   # Clustering parameters over which to search for optimization
   max_cluster_times: [0.15, 0.2] # In microseconds
@@ -93,9 +78,8 @@ Simulation:
 
   # Use BDT?
   bdt:
-    use: True
+    use: true
     energy_limit: 30
-    optimize_hyperparameters: True
 
   # ----- Parameters below are less likely to be changed ----
   fake_trigger_rate: 3.85802469e-7 # 1/(60 * 60 * 24 * 30) -> 1 trigger per month
@@ -105,34 +89,66 @@ Simulation:
   adc_mode: normal # Useless at this point
 
 Backgrounds:
-  - Ar39GenInLAr
-  - Kr85GenInLAr
-  - Ar42GenInLAr
-  - K42From42ArGenInLAr
-  - Rn222ChainRn222GenInLAr
-  - Rn222ChainPo218GenInLAr
-  - Rn222ChainPb214GenInLAr
-  - Rn222ChainBi214GenInLAr
-  - Rn222ChainPb210GenInLAr
-  - Rn220ChainPb212GenInLAr
-  - K40GenInCathode
-  - U238ChainGenInCathode
-  - Th232ChainGenInCathode
-  - K40GenInAnode
-  - U238ChainGenInAnode
-  - Th232ChainGenInAnode
-  - Rn222ChainGenInPDS
-  - K42From42ArGenInUpperMesh1x8x14
-  - Rn222ChainFromPo218GenInUpperMesh1x8x14
-  - Rn222ChainFromPb214GenInUpperMesh1x8x14
-  - Rn222ChainFromBi214GenInUpperMesh1x8x14
-  - Rn222ChainFromPb210GenInUpperMesh1x8x14
-  - Rn222ChainFromBi210GenInUpperMesh1x8x14
-  - Rn220ChainFromPb212GenInUpperMesh1x8x14
-  - CavernwallGammasAtLAr1x8x14
-  - foamGammasAtLAr1x8x14
-  - CavernwallNeutronsAtLAr1x8x14
-  - CryostatNGammasAtLAr1x8x14
-  - CavernNGammasAtLAr1x8x14
+  VD:
+    - Ar39GenInLAr
+    - Kr85GenInLAr
+    - Ar42GenInLAr
+    - K42From42ArGenInLAr
+    - Rn222ChainRn222GenInLAr
+    - Rn222ChainPo218GenInLAr
+    - Rn222ChainPb214GenInLAr
+    - Rn222ChainBi214GenInLAr
+    - Rn222ChainPb210GenInLAr
+    - Rn220ChainPb212GenInLAr
+    - K40GenInCathode
+    - U238ChainGenInCathode
+    - Th232ChainGenInCathode
+    - K40GenInAnode
+    - U238ChainGenInAnode
+    - Th232ChainGenInAnode
+    - Rn222ChainGenInPDS
+    - K42From42ArGenInUpperMesh1x8x14
+    - Rn222ChainFromPo218GenInUpperMesh1x8x14
+    - Rn222ChainFromPb214GenInUpperMesh1x8x14
+    - Rn222ChainFromBi214GenInUpperMesh1x8x14
+    - Rn222ChainFromPb210GenInUpperMesh1x8x14
+    - Rn222ChainFromBi210GenInUpperMesh1x8x14
+    - Rn220ChainFromPb212GenInUpperMesh1x8x14
+    - CavernwallGammasAtLAr1x8x14
+    - foamGammasAtLAr1x8x14
+    - CavernwallNeutronsAtLAr1x8x14
+    - CryostatNGammasAtLAr1x8x14
+    - CavernNGammasAtLAr1x8x14
 
-
+  HD:
+    - Ar39GenInLAr
+    - Kr85GenInLAr
+    - Ar42GenInLAr
+    - K42From42ArGenInLAr
+    - Rn222ChainRn222GenInLAr
+    - Rn222ChainPo218GenInLAr
+    - Rn222ChainPb214GenInLAr
+    - Rn222ChainBi214GenInLAr
+    - Rn222ChainPb210GenInLAr
+    - Rn220ChainPb212GenInLAr
+    - K40GenInCPA
+    - U238ChainGenInCPA
+    - K42From42ArGenInCPA
+    - Rn222ChainPo218GenInCPA
+    - Rn222ChainPb214GenInCPA
+    - Rn222ChainBi214GenInCPA
+    - Rn222ChainPb210GenInCPA
+    - Rn222ChainFromBi210GenInCPA
+    - Rn220ChainFromPb212GenInCPA
+    - Co60GenInAPA
+    - U238ChainGenInAPA
+    - Th232ChainGenInAPA
+    - K40GenInAPAboards
+    - U238ChainGenInAPAboards
+    - Th232ChainGenInAPAboards
+    - Rn222ChainGenInPDS
+    - CavernwallGammasAtLAr
+    - foamGammasAtLAr
+    - CavernwallNeutronsAtLAr
+    - CryostatNGammasAtLAr
+    - CavernNGammasAtLAr

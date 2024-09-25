@@ -1,51 +1,35 @@
 '''
-save_n_load.py
+data_loader.py
 
-This module contains the functions to load the hit data in parallel from th ROOT files.
-Also to save and load the efficiency data and curves.
+This module...
 '''
-
 
 import sys
 import numpy as np
-import os, re
+import os
 import multiprocessing as mp
 import uproot
 from itertools import repeat
 import random
 import string
 import pickle
+import logging
 from sys import exit
 
-import rich
-from rich.progress import track, Progress, TextColumn, TimeElapsedColumn,\
-    BarColumn, TaskProgressColumn, TimeRemainingColumn, MofNCompleteColumn
 from rich.logging import RichHandler
-from rich.live import Live
 from rich.console import Console, Group
-from rich.spinner import Spinner
-from rich.text import Text
+from rich.table import Table
 
 import gui
 from gui import console
-import logging
 from utils import get_total_size
-from rich.table import Table
-
-#from parameters import *
 
 class DataLoader:
 
-    def __init__(self, config):
+    def __init__(self, config, logging_level=logging.INFO):
         self.config = config
-
-        logging.basicConfig(
-            level=logging.INFO, 
-            format="%(message)s", 
-            datefmt="[%X]", 
-            handlers=[RichHandler(rich_tracebacks=True, console=console)]
-        )
-        self.log = logging.getLogger("rich")
+        self.log = logging.getLogger(self.__class__.__name__)
+        self.log.setLevel(logging_level)
 
         # self.log.debug("This is a debug message")
         # self.log.info("Hello, World!")
@@ -54,40 +38,60 @@ class DataLoader:
         # self.log.exception("This is an exception")
 
 
-    def load_and_split(self, sn_limit, bg_limit, train_split=0.5):
+    def load_and_split(self, sn_limit, bg_limit, train_split=0.5, shuffle=False):
         '''
-        Load the signal and backgrounds and split them into train adn efficiency computation sets
+        Load the signal and backgrounds and split them into train and efficiency computation sets
         '''
 
         # Config reads ----
         # ENERGY LIMIT TO TRAIN THE BDT
-        bdt_energy_limit = self.config.get("Simulation", "bdt", "energy_limit")
+        use_bdt = self.config.get("Simulation", "bdt", "use")
+        bdt_energy_limit = self.config.get("Simulation", "bdt", "energy_limit") if use_bdt else 1e5
         bg_sample_length = self.config.get("IO", "bg_sample_length")
         bg_sample_number_per_file = self.config.get("IO", "bg_sample_number_per_file")
+        load_data_in_parallel = True #self.config.get("IO", "load_data_in_parallel")
         # -----------------
 
         self.log.info("Loading SN data...")
-        sn_total_hits, sn_hit_list_per_event, sn_info_per_event, _, _ = self.load_all_sn_events_chunky(limit=sn_limit)
+        sn_total_hits, sn_hit_list_per_event, sn_info_per_event, _, _ = self.load_all_sn_events_chunky(limit=sn_limit, load_data_in_parallel=load_data_in_parallel)
         self.log.info("SN data loaded")
-
+        
         self.log.info("Loading BG data...")
-        bg_total_hits, bg_hit_list_per_event, _, _= self.load_all_backgrounds_chunky_type_separated(limit=bg_limit)
+        bg_total_hits, bg_hit_list_per_event, _, _= self.load_all_backgrounds_chunky_type_separated(limit=bg_limit, load_data_in_parallel=load_data_in_parallel)
         bg_length = len(bg_hit_list_per_event) * bg_sample_length # in miliseconds
         self.log.info("BG data loaded")
 
         del _
-        del sn_total_hits, bg_total_hits
+        #del sn_total_hits, bg_total_hits
 
+        # Do this for convenient shuffling/energy filtering later
+        sn_info_per_event = np.array(sn_info_per_event)
+        sn_hit_list_per_event = np.array(sn_hit_list_per_event, dtype=object)
+
+        if shuffle:
+            # Shuffle the SN and BG events. This seems especially important as the parallel loading of the BG files messes things up
+            # TODO: better investigate this
+            # TODO: move the shuffling to the loading functions
+            # Shuffle the SN events
+            sn_shuffled_indices = np.arange(len(sn_info_per_event))
+            np.random.shuffle(sn_shuffled_indices)
+            sn_info_per_event = sn_info_per_event[sn_shuffled_indices]
+            sn_hit_list_per_event = sn_hit_list_per_event[sn_shuffled_indices]
+
+            # Shuffle the BG events
+            random.shuffle(bg_hit_list_per_event)
 
         # We need to spit the SN and BG events for training the BDT and efficiency evaluation 
         # (this is not a train/test split, that is done in the BDT training later)
-        # (we don't really need to shuffle this as the loading is paralelised anyways)
-        split_point_sn = int(len(sn_info_per_event) * train_split)
-        split_point_bg = int(len(bg_hit_list_per_event) * train_split)
+        if use_bdt:
+            split_point_sn = int(len(sn_info_per_event) * train_split)
+            split_point_bg = int(len(bg_hit_list_per_event) * train_split)
+        else:
+            split_point_sn = 0
+            split_point_bg = 0
+
         sn_train_info_per_event = sn_info_per_event[:split_point_sn]
-        sn_train_info_per_event = np.array(sn_train_info_per_event)
         sn_train_hit_list_per_event = sn_hit_list_per_event[:split_point_sn] 
-        sn_train_hit_list_per_event = np.array(sn_train_hit_list_per_event, dtype=object)
 
         # Filter the SN events that are above the BDT energy limit
         sn_train_hit_list_per_event = sn_train_hit_list_per_event[sn_train_info_per_event[:, 0] < bdt_energy_limit]
@@ -97,58 +101,59 @@ class DataLoader:
         sn_eff_info_per_event = sn_info_per_event[split_point_sn:]
         sn_eff_hit_list_per_event = sn_hit_list_per_event[split_point_sn:]
         
-        # Shuffle the BG events
-        random.shuffle(bg_hit_list_per_event)
         bg_train_hit_list_per_event = bg_hit_list_per_event[:split_point_bg]
         bg_eff_hit_list_per_event = bg_hit_list_per_event[split_point_bg:]
         #console.log(split_point_bg, len(bg_hit_list_per_event))
 
-
         # Display memory usage of the loaded data, in MB using a rich table
-        table = Table(title="Memory Usage of Loaded Data", title_style="bold yellow")
+        # TODO: maybe move the tables to gui.py? Or elsewhere?
+        table = Table(title="Memory Usage of Loaded Data", title_style="bold yellow", title_justify="left")
 
-        table.add_column("Data Type", justify="left", style="bold cyan", no_wrap=True)
-        table.add_column("Memory Usage (MB)", justify="right", style="bold magenta")
+        table.add_column("Data Type", justify="left", style="green", no_wrap=True)
+        table.add_column("Memory Usage (MB)", justify="right", style="red")
 
-        table.add_row("[bold green]SN hits[/bold green]", f"[bold red]{get_total_size(sn_hit_list_per_event) / 1024**2:.2f}[/bold red]")
-        table.add_row("[bold green]SN event info[/bold green]", f"[bold red]{get_total_size(sn_info_per_event) / 1024**2:.2f}[/bold red]")
-        table.add_row("[bold green]BG hits[/bold green]", f"[bold red]{get_total_size(bg_hit_list_per_event) / 1024**2:.2f}[/bold red]")
+        table.add_row("SN hits", f"{np.sum([a.nbytes for a in sn_hit_list_per_event])  / 1024**2:.2f}")
+        table.add_row("SN event info", f"{get_total_size(sn_info_per_event) / 1024**2:.2f}")
+        table.add_row("BG hits", f"{np.sum([a.nbytes for a in bg_hit_list_per_event]) / 1024**2:.2f}")
 
         console.log(table)
 
         # Create a rich table to display the statistics
-        table = Table(title="Data Loading Statistics", title_style="bold yellow")
+        table = Table(title="Data Loading Statistics", title_style="bold yellow", title_justify="left")
 
-        table.add_column("Category", justify="left", style="bold cyan", no_wrap=True)
+        table.add_column("Category", justify="left", style="green", no_wrap=True)
         table.add_column("Total", justify="right", style="bold magenta")
-        table.add_column("Efficiency", justify="right", style="bold green")
+        table.add_column("Efficiency", justify="right", style="bold red")
         table.add_column("Training", justify="right", style="bold blue")
 
         table.add_row("Number of SN hits", 
-                  f"{np.sum([len(event) for event in sn_hit_list_per_event])}",
-                  f"{np.sum([len(event) for event in sn_eff_hit_list_per_event])}",
-                  f"{np.sum([len(event) for event in sn_train_hit_list_per_event])}")
+                    f"{np.sum([len(event) for event in sn_hit_list_per_event]):,}",
+                    f"{np.sum([len(event) for event in sn_eff_hit_list_per_event]):,}",
+                    f"{np.sum([len(event) for event in sn_train_hit_list_per_event]):,}")
         table.add_row("Number of BG hits", 
-                  f"{np.sum([len(event) for event in bg_hit_list_per_event])}",
-                  f"{np.sum([len(event) for event in bg_eff_hit_list_per_event])}",
-                  f"{np.sum([len(event) for event in bg_train_hit_list_per_event])}")
+                    f"{np.sum([len(event) for event in bg_hit_list_per_event]):,}",
+                    f"{np.sum([len(event) for event in bg_eff_hit_list_per_event]):,}",
+                    f"{np.sum([len(event) for event in bg_train_hit_list_per_event]):,}")
         table.add_row("Total SN events", 
-                  f"{len(sn_info_per_event)}",
-                  f"{len(sn_eff_info_per_event)}",
-                  f"{len(sn_train_info_per_event)}")
-        table.add_row("Total BG length (ms)", 
-                  f"{bg_length}",
-                  f"{len(bg_eff_hit_list_per_event) * bg_sample_length}",
-                  f"{len(bg_train_hit_list_per_event) * bg_sample_length}")
+                    f"{len(sn_info_per_event):,}",
+                    f"{len(sn_eff_info_per_event):,}",
+                    f"{len(sn_train_info_per_event):,}")
+        table.add_row("Total BG \"events\"", 
+                    f"{len(bg_hit_list_per_event):,}",
+                    f"{len(bg_eff_hit_list_per_event):,}",
+                    f"{len(bg_train_hit_list_per_event):,}")
+        table.add_row("Total BG length (ms)",
+                    f"{bg_length:,}",
+                    f"{len(bg_eff_hit_list_per_event) * bg_sample_length:,}",
+                    f"{len(bg_train_hit_list_per_event) * bg_sample_length:,}")
 
         console.log(table)
-
 
         return (sn_eff_hit_list_per_event, sn_train_hit_list_per_event, sn_eff_info_per_event,
                  sn_train_info_per_event, bg_eff_hit_list_per_event, bg_train_hit_list_per_event, bg_length)
 
 
-    def load_all_backgrounds_chunky_type_separated(self, limit=1, offset=0):
+    def load_all_backgrounds_chunky_type_separated(self, limit=1, offset=0, load_data_in_parallel=True):
         # Config reads ----
         detector_type = self.config.get("Detector", "type")
         bg_data_dir = self.config.get("IO", "bg_data_dir")
@@ -162,8 +167,7 @@ class DataLoader:
 
         bg_total_hits = []
         bg_hit_list_per_event = []
-        # bg_total_hits_per_type = [[] for _ in range(len(bg_types))]
-        # bg_hit_list_per_event_per_type = [[] for _ in range(len(bg_types))]
+
         bg_total_hits_per_type = {bg_type: [] for bg_type in bg_types}
         bg_hit_list_per_event_per_type = {bg_type: [] for bg_type in bg_types}
         
@@ -193,11 +197,12 @@ class DataLoader:
             bg_type = bg_types[i]
             
             # Process files in parallel
-            results = self.process_files_in_parallel(
+            results = self.process_files(
                 reco_file_names_per_type[i],
                 event_num=bg_sample_number_per_file,
                 sn_event=False,
-                data_type_str=f'{bg_type} BG data'
+                data_type_str=f'{bg_type} BG data',
+                in_parallel=load_data_in_parallel
             ) 
 
             # Accumulate results
@@ -242,7 +247,7 @@ class DataLoader:
 
 
     # Load SN events hits and neutrino (MC truth) information
-    def load_all_sn_events_chunky(self, load_photon_info=False, limit=1, offset=0):
+    def load_all_sn_events_chunky(self, load_photon_info=False, limit=1, offset=0, load_data_in_parallel=True):
         """
         Load Supernova event hits and neutrino (MC truth) information.
 
@@ -261,14 +266,13 @@ class DataLoader:
         # Config reads ----
         detector_type = self.config.get("Detector", "type")
         sn_data_dir = self.config.get("IO", "sn_data_dir")
-        adc_mode = self.config.get("Simulation", "adc_mode")
+        #adc_mode = self.config.get("Simulation", "adc_mode")
         sim_mode = self.config.get("Simulation", "sim_mode")
         event_num = self.config.get("IO", "sn_event_number_per_file")
         startswith = self.config.get("IO", "sn_hit_file_start_pattern")
         endswith = self.config.get("IO", "sn_hit_file_end_pattern").format(sim_mode)
         info_endswith = self.config.get("IO", "sn_info_file_end_pattern")
         photon_endswith = self.config.get("IO", "photon_file_end_pattern")
-        #TODO: add to read: the number of events per file
         # -----------------
 
         # Collect valid file names
@@ -286,14 +290,15 @@ class DataLoader:
         )
 
         # Process files in parallel
-        results = self.process_files_in_parallel(
+        results = self.process_files(
             reco_file_names,
             info_file_names,
             event_num,
             load_photon_info,
             photon_file_names,
             sn_event=True,
-            data_type_str="SN data"
+            data_type_str="SN data",
+            in_parallel=load_data_in_parallel
         )
 
         # Accumulate results
@@ -422,9 +427,9 @@ class DataLoader:
 
         return reco_file_names, info_file_names, photon_file_names
 
-    def process_files_in_parallel(self, reco_file_names, info_file_names=None, event_num=1000,
-                                   load_photon_info=False, photon_file_names=None, 
-                                   sn_event=True, data_type_str="Chipmonc"):
+    def process_files(self, reco_file_names, info_file_names=None, event_num=1000,
+                        load_photon_info=False, photon_file_names=None, 
+                        sn_event=True, data_type_str="Chipmonc", in_parallel=False):
         """
         Process the collected files in parallel.
 
@@ -439,37 +444,52 @@ class DataLoader:
         Returns:
             list: Results from processing each file.
         """
-        num_processes = mp.cpu_count()
-
-        # We need to pair the results corresponding to the same ids
+        
         status_fstring = f'[bold green] Loading {data_type_str}.'
+        results = []
+
+        # For consistency in the loading order, and for testing purposes, we may load the files in a non-parallel way
         with gui.live_progress(console=console, status_fstring=status_fstring) as (progress, live, group):
-            task = progress.add_task(f'[cyan]Loading {data_type_str} (in parallel)...', total=len(reco_file_names))
-            with mp.Pool(num_processes) as pool:
-                results = []
+            if not in_parallel:
+                task = progress.add_task(f'[cyan]Loading {data_type_str} (NOT in parallel)...', total=len(reco_file_names))
                 
-                # Prepare arguments for parallel processing
-                args = zip(
-                    reco_file_names,
-                    info_file_names if info_file_names else repeat(None),
-                    repeat(event_num),
-                    repeat(load_photon_info),
-                    photon_file_names if photon_file_names else repeat(None),
-                    repeat(sn_event)
-                )
+                for i, reco_file_name in enumerate(reco_file_names):
+                    info_file_name = info_file_names[i] if info_file_names else None
+                    photon_file_name = photon_file_names[i] if photon_file_names else None
 
-                imap_results = pool.imap_unordered(self.wrapped_load_hit_and_neutrino_info, args)
-
-                for result in imap_results:
+                    result = self.load_hit_and_neutrino_info(reco_file_name, info_file_name, event_num, load_photon_info, photon_file_name, sn_event)
                     progress.update(task, advance=1)
                     results.append(result)
+                
+            else:
+                task = progress.add_task(f'[cyan]Loading {data_type_str} (in parallel)...', total=len(reco_file_names))
+                num_processes = mp.cpu_count()
+                with mp.Pool(num_processes) as pool:
+                    results = []
+                    
+                    # Prepare arguments for parallel processing
+                    args = zip(
+                        reco_file_names,
+                        info_file_names if info_file_names else repeat(None),
+                        repeat(event_num),
+                        repeat(load_photon_info),
+                        photon_file_names if photon_file_names else repeat(None),
+                        repeat(sn_event)
+                    )
+
+                    imap_results = pool.imap_unordered(self.wrapped_load_hit_and_neutrino_info, args)
+
+                    for result in imap_results:
+                        results.append(result)
+                        progress.update(task, advance=1)
             
             # Create a new group with just the progress bar
             # Update the live display with the new group
             group = Group(progress)
             live.update(group)
 
-            return results
+        return results
+        
 
     def accumulate_results(self, results, load_photon_info, sn_event=True):
         """
@@ -529,8 +549,8 @@ class DataLoader:
 
 
 
-    def load_hit_and_neutrino_info(self, file_name, info_file_name=None, event_num=-1, load_photon_info=False, photon_file_name=None, sn_event=True):
-        total_hits, hit_list_per_event, _ = self.load_hit_data(file_name, event_num)
+    def load_hit_and_neutrino_info(self, reco_file_name, info_file_name=None, event_num=-1, load_photon_info=False, photon_file_name=None, sn_event=True):
+        total_hits, hit_list_per_event, _ = self.load_hit_data(reco_file_name, event_num)
         sn_info, sn_info_per_event = None, None
 
         if sn_event:
@@ -546,7 +566,7 @@ class DataLoader:
     def wrapped_load_hit_and_neutrino_info(self, arg_list):
             return self.load_hit_and_neutrino_info(*arg_list)
     
-    def load_hit_data(self, file_name="pbg_g4_digi_reco_hist.root", event_num=-1):
+    def load_hit_data(self, reco_file_name, event_num=-1):
         # The hit info is imported from a .root file.
         # From the hit info, we find the clusters
 
@@ -560,11 +580,13 @@ class DataLoader:
         z_coords = self.config.loaded["z_coords"]
         # ----------------- 
 
-        self.log.debug(f"Loading hit data from file: {file_name}")
+        # Disabling loging from multiprocessing functions right now due to isssues with rich
+        # TODO: Fix this
+        #self.log.debug(f"Loading hit data from file: {file_name}")
 
         # TODO: fix this bullshit for Laura's files
         try:
-            with uproot.open(file_name) as uproot_file:
+            with uproot.open(reco_file_name) as uproot_file:
                 uproot_ophit = uproot_file["opflashana/PerOpHitTree"]
                 total_hits_dict = uproot_ophit.arrays(['EventID', 'HitID', 'OpChannel', 'PeakTime', 'X_OpDet_hit', 'Y_OpDet_hit', 'Z_OpDet_hit',
                                                         'Width', 'Area', 'Amplitude', 'PE'], library="np")
@@ -572,7 +594,7 @@ class DataLoader:
                 total_hits = np.array(total_hits).T
 
         except uproot.exceptions.KeyInFileError:
-            with uproot.open(file_name) as uproot_file:
+            with uproot.open(reco_file_name) as uproot_file:
                 uproot_ophit = uproot_file["opflashana/PerOpHitTree"]
                 total_hits_dict_1 = uproot_ophit.arrays(['EventID', 'HitID', 'OpChannel', 'PeakTime'], library="np")
 
@@ -582,8 +604,7 @@ class DataLoader:
                 # Edit the OpChannel array for the new configuration of two channels per X-ARAPUCA (for VD only).
                 # (What used to be OpChannel 43 is now 430 and 431, etc.)
                 if detector_type == "VD":
-                    for i in range(len(total_hits_dict_1['OpChannel'])):
-                        total_hits_dict_1['OpChannel'][i] = int(total_hits_dict_1['OpChannel'][i] / 10)
+                    total_hits_dict_1['OpChannel'] = (total_hits_dict_1['OpChannel'] // 10).astype(int)
                     
                 total_hits_dict_1['X_OpDet_hit'] = x_coords[total_hits_dict_1['OpChannel']]
                 total_hits_dict_1['Y_OpDet_hit'] = y_coords[total_hits_dict_1['OpChannel']]
@@ -604,10 +625,7 @@ class DataLoader:
 
     # Load neutrino (MC truth) info for SN events
     @staticmethod
-    def load_neutrino_info(file_name, verbose=0):
-        if verbose > 0:
-            print(file_name, mp.current_process())
-
+    def load_neutrino_info(file_name):
         info_per_event = []
 
         # uproot_neutrino = uproot.open(file_name)["vdflashmatch/FlashMatchTree"]
@@ -626,18 +644,17 @@ class DataLoader:
         return info_per_event_arr, info_per_event
 
 
-    @staticmethod
-    def process_hit_data(total_hits, event_num=-1):
+    def process_hit_data(self, total_hits, event_num=-1):
         if event_num == -1:
             try:
                 event_num = int(np.max(total_hits[:, 0]))
             except ValueError:
-                print("No events found!")
+                self.log.debug("No events found!")
                 return [[]], []
 
         hit_number_per_event = np.zeros(event_num)
         hit_list_per_event = [[] for _ in range(event_num)]
-        detection_per_event = np.zeros(event_num)
+        # detection_per_event = np.zeros(event_num)
 
         for i in range(len(total_hits)):
             event_id = total_hits[i, 0]
@@ -662,7 +679,7 @@ class DataLoader:
         unique, counts = np.unique(total_hits[:, 2], return_counts=True)
         hit_num_per_channel = dict(zip(unique, counts))
 
-        return hit_list_per_event, hit_num_per_channel  
+        return hit_list_per_event, hit_num_per_channel
 
 
     # TIME PROFILE IS IN MS!!!!
@@ -699,64 +716,3 @@ class DataLoader:
             photons_per_channel[ev][opchannel_id] = photons[2][i]
 
         return photons_per_channel
-
-
-# TODO: PUT THIS INTO A CLASS
-#TODO: Make sim_parameters a dictionary!!!
-def save_efficiency_data(eff_data, sim_parameters, file_name=None, data_type="data"):
-    #ftr, btw, dist, sim_mode, adc_mode, detector, classify, avg_energy, alpha = sim_parameters
-    sim_parameters = tuple(sim_parameters)
-
-    # Generate a random string to identify the file
-    if file_name is None:
-        random_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-        file_name = "efficiency_{}_".format(data_type) + random_string + ".pcl"
-    
-    # Save this correspondence to a dictionary
-    try:
-        file_names = pickle.load(open("{}/{}".format(SAVE_PATH, "file_names_dict_{}.pcl".format(data_type)), "rb"))
-        if not isinstance(file_names, dict):
-                file_names = {}
-    
-        # Check if entry with these sim_parameters already exists
-        if sim_parameters in file_names.keys():
-            file_name = file_names[sim_parameters]
-
-        file_names[sim_parameters] = file_name
-
-    except FileNotFoundError:
-        file_names = {}
-        file_names[sim_parameters] = file_name
-
-    pickle.dump(file_names, open("{}/{}".format(SAVE_PATH, "file_names_dict_{}.pcl".format(data_type)), "wb"))
-
-    # Save the data
-    pickle.dump(eff_data, open("{}/{}".format(SAVE_PATH, file_name), "wb"))
-
-    print("Saved efficiency {} to file:".format(data_type), file_name)
-
-    return file_name
-
-
-def load_efficiency_data(sim_parameters=[], file_name=None, data_type="data"):
-    # Check if the dict file exists
-    try:
-        file_names = pickle.load(open("{}/{}".format(SAVE_PATH, "file_names_dict_{}.pcl".format(data_type)), "rb"))
-    except FileNotFoundError:
-        file_names = {}
-        pickle.dump(file_names, open("{}/{}".format(SAVE_PATH, "file_names_dict_{}.pcl".format(data_type)), "wb"))
-
-    sim_parameters = tuple(sim_parameters)
-    if file_name is None:
-        file_names = pickle.load(open("{}/{}".format(SAVE_PATH, "file_names_dict_{}.pcl".format(data_type)), "rb"))
-        # Find the file name corresponding to the sim_parameters
-        file_name = file_names[sim_parameters]
-
-    # Load the data
-    eff_data = pickle.load(open("{}/{}".format(SAVE_PATH, file_name), "rb"))
-    print("Loaded efficiency {} from file {}".format(data_type, file_name))
-
-    return eff_data, file_name
-
-
-

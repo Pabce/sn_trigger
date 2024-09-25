@@ -5,21 +5,26 @@ def get_total_size(obj, seen=None):
     # Keep track of already seen objects to avoid infinite recursion
     if seen is None:
         seen = set()
-    
+
+    obj_id = id(obj)
     # Return 0 if the object is already counted
-    if id(obj) in seen:
+    if obj_id in seen:
         return 0
 
     # Mark the current object as seen
-    seen.add(id(obj))
+    seen.add(obj_id)
 
-    # Handle numpy arrays specifically
+    # Start with the size of the object itself
+    size = sys.getsizeof(obj)
+
+    # Handle numpy arrays
     if isinstance(obj, np.ndarray):
-        # Use the nbytes attribute for numpy arrays to get the size of the data buffer
-        size = obj.nbytes + sys.getsizeof(obj)
-    else:
-        # Start with the size of the object itself
-        size = sys.getsizeof(obj)
+        if obj.dtype == object:
+            # If it's an object array, recursively calculate the size of each element
+            size += sum(get_total_size(item, seen) for item in obj.flat)
+        else:
+            # Use nbytes for regular numpy arrays to get the size of the data buffer
+            size += obj.nbytes
 
     # If the object is a dictionary, add the size of its keys and values
     if isinstance(obj, dict):

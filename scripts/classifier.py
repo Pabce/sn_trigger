@@ -4,24 +4,38 @@ classifier.py
 Contains the functions that train and apply the BDT.
 '''
 
+import logging
+import warnings
+# Filter useless warnings
+warnings.filterwarnings("ignore", message="y_pred contains classes not in y_true")
+
+import gui
+from gui import console
 
 from locale import normalize
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
+import logging
 
+import sklearn
 from sklearn import tree
 # from sklearn.experimental import enable_hist_gradient_boosting
 from sklearn.experimental import enable_halving_search_cv
-from sklearn.metrics import zero_one_loss, confusion_matrix
+from sklearn.metrics import zero_one_loss, confusion_matrix, balanced_accuracy_score, accuracy_score, roc_auc_score
 from sklearn.model_selection import train_test_split, HalvingRandomSearchCV
 from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.utils.fixes import loguniform
-from scipy.stats import uniform, randint, expon
+
+try:
+    from sklearn.utils.fixes import loguniform
+    from scipy.stats import uniform, randint, expon
+except ImportError:
+    from scipy.stats import uniform, randint, expon, loguniform
+
+# TODO: make sklearn print like the rest of the code... (seems impossible)
 
 
-
-def build_decision_tree(features, targets):
+def useless_build_decision_tree(features, targets):
 
     train_features, test_features, train_targets, test_targets = train_test_split(features, targets,
                                                                 test_size=0.1, random_state=212)
@@ -109,10 +123,11 @@ def gradient_boosted_tree(features, targets, n_estimators=200, max_depth=2, thre
     return boosted_tree, test_features, test_targets, train_features, train_targets
 
 
-def hist_gradient_boosted_tree(features, targets, n_estimators=200, max_depth=2, optimize_hyperparameters=False):
+def hist_gradient_boosted_tree(features, targets, n_estimators=200, optimize_hyperparameters=False):
     train_features, test_features, train_targets, test_targets =\
-                                    train_test_split(features, targets, test_size=0.01, shuffle=True)
+                    train_test_split(features, targets, test_size=0.1, shuffle=True, stratify=targets)
     
+    # TODO: The test size should be adapted so the number of test samples is never too small
 
     # Optimize hyperparameters
     if optimize_hyperparameters:
@@ -123,17 +138,29 @@ def hist_gradient_boosted_tree(features, targets, n_estimators=200, max_depth=2,
                     'min_samples_leaf': randint(5, 25),
                     'max_bins': randint(16, 255),
                     'l2_regularization': loguniform(1e-10, 1e-1),
-                    'class_weight': ['balanced', None],
+                    'class_weight': ['balanced'],
                     }
+                    # 'class_weight': ['balanced', None],
         
-        search = HalvingRandomSearchCV(base_estimator, param_grid, cv=3, verbose=1, n_jobs=-1).fit(train_features, train_targets)
-        print(search.best_params_)
+        search = HalvingRandomSearchCV(
+            base_estimator, param_grid, cv=3, verbose=1, 
+            n_jobs=-1, scoring='balanced_accuracy'
+            ).fit(train_features, train_targets)
+
+        logging.info(f"Best parameters: {search.best_params_}")
                   
         hist_boosted_tree = search.best_estimator_
     else:
-        hist_boosted_tree = HistGradientBoostingClassifier(learning_rate=0.05, max_iter=n_estimators, class_weight='balanced').fit(train_features, train_targets)
+        hist_boosted_tree = HistGradientBoostingClassifier(
+            learning_rate=0.05, max_iter=n_estimators, class_weight='balanced'
+            ).fit(train_features, train_targets)
 
-    return hist_boosted_tree, test_features, test_targets, train_features, train_targets
+    # Print the score of the best estimator
+    train_score = hist_boosted_tree.score(train_features, train_targets)
+    test_score = hist_boosted_tree.score(test_features, test_targets)
+
+    return (hist_boosted_tree, test_features, test_targets, test_score,
+            train_features, train_targets, train_score)
     
 
 
@@ -171,4 +198,3 @@ if __name__ == "__main__":
 
 
     gradient_boosted_tree(features[:,:], targets)
-

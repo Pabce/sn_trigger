@@ -9,42 +9,30 @@ import yaml
 import numpy as np
 import pickle
 import argparse
+import logging
 
 class Configurator:
     DEFAULT_CONFIG_FILE_VD = "../configs/default_config_vd.yaml"
     DEFAULT_CONFIG_FILE_HD = "../configs/default_config_hd.yaml"
 
-    def __init__(self, config_path="../nope.yaml", default_config_path="../nope.yaml"):
+    def __init__(self, config_path="../nope.yaml", default_config_path=None, logging_level=logging.INFO):
+        self.log = logging.getLogger(self.__class__.__name__)
+        self.log.setLevel(logging_level)
+        
         # Load the active config file AND the default config file, 
         # which is used to fill in missing values
-        with open(default_config_path, 'r') as file:
-            self.default_yaml_dict = yaml.safe_load(file)
-            
         with open(config_path, 'r') as file:
             self.yaml_dict = yaml.safe_load(file)
-        
+            self.log.info(f"Configuration file loaded from: {config_path}")
+
+        with open(default_config_path, 'r') as file:
+            self.default_yaml_dict = yaml.safe_load(file)
+            self.log.info(f"Default config file is: {default_config_path}")
         # We will also load extra arrays that are used in the simulation
         # under the "loaded" member variables
         self.loaded = {}
         self.load_coodinates()
 
-    def load_coodinates(self):
-        # Load coordinate arrays
-        detector = self.get("Detector", "type")
-        x, y, z = self.load_coordinate_arrays(detector)
-
-        self.loaded["x_coords"] = x
-        self.loaded["y_coords"] = y
-        self.loaded["z_coords"] = z
-
-        # Load optical distance arrays
-        op_distance_array, op_x_distance_array, op_y_distance_array, op_z_distance_array = self.load_op_distance_arrays(detector)
-
-        self.loaded["op_distance_array"] = op_distance_array
-        self.loaded["op_x_distance_array"] = op_x_distance_array
-        self.loaded["op_y_distance_array"] = op_y_distance_array
-        self.loaded["op_z_distance_array"] = op_z_distance_array
-    
     # Constructor for when the config file is grabbed from the command line
     @classmethod
     def file_from_command_line(cls):
@@ -71,6 +59,23 @@ class Configurator:
             return cls(config_path=cls.DEFAULT_CONFIG_FILE_HD, default_config_path=cls.DEFAULT_CONFIG_FILE_HD)
         else:
             raise ValueError("Invalid detector type")
+
+    def load_coodinates(self):
+        # Load coordinate arrays
+        detector = self.get("Detector", "type")
+        x, y, z = self.load_coordinate_arrays(detector)
+
+        self.loaded["x_coords"] = x
+        self.loaded["y_coords"] = y
+        self.loaded["z_coords"] = z
+
+        # Load optical distance arrays
+        op_distance_array, op_x_distance_array, op_y_distance_array, op_z_distance_array = self.load_op_distance_arrays(detector)
+
+        self.loaded["op_distance_array"] = op_distance_array
+        self.loaded["op_x_distance_array"] = op_x_distance_array
+        self.loaded["op_y_distance_array"] = op_y_distance_array
+        self.loaded["op_z_distance_array"] = op_z_distance_array
 
     def get(self, *keys, default=None):
         # Get the value from the active config file if it exists, 
@@ -102,7 +107,7 @@ class Configurator:
         except KeyError:
             # If we can't find the key in the active config file,
             # we look in the default config file
-            yamñ_dict = default_yaml_dict
+            yaml_dict = default_yaml_dict
             for key in keys[:-1]:
                 if key in yaml_dict:
                     yaml_dict = yaml_dict[key]
@@ -121,8 +126,8 @@ class Configurator:
         elif detector == "HD":
             file = self.get("IO", "aux_coordinate_dir") + "pdpos_hd1x2x6.dat"
 
-        print("Loading detector coordinates from file: ", file)
         coords = np.genfromtxt(file, skip_header=1, skip_footer=2)
+        self.log.info(f"Loaded detector coordinates from file: {file}")
 
         # Split into x, y, z arrays
         x = coords[:, 1]
@@ -136,10 +141,14 @@ class Configurator:
         geometry_version = self.get("Detector", "geometry_version")
 
         # TODO: switch from pickle to text file, make function to create these accessible
-        op_distance_array = pickle.load(open("{}/op_distance_array_{}_{}".format(file_dir, detector, geometry_version), "rb"))
-        op_x_distance_array = pickle.load(open("{}/op_x_distance_array_{}_{}".format(file_dir, detector, geometry_version), "rb"))
-        op_y_distance_array = pickle.load(open("{}/op_y_distance_array_{}_{}".format(file_dir, detector, geometry_version), "rb"))
-        op_z_distance_array = pickle.load(open("{}/op_z_distance_array_{}_{}".format(file_dir, detector, geometry_version), "rb"))
+        with open("{}/op_distance_array_{}_{}".format(file_dir, detector, geometry_version), "rb") as f:
+            op_distance_array = pickle.load(f)
+        with open("{}/op_x_distance_array_{}_{}".format(file_dir, detector, geometry_version), "rb") as f:
+            op_x_distance_array = pickle.load(f)
+        with open("{}/op_y_distance_array_{}_{}".format(file_dir, detector, geometry_version), "rb") as f:
+            op_y_distance_array = pickle.load(f)
+        with open("{}/op_z_distance_array_{}_{}".format(file_dir, detector, geometry_version), "rb") as f:
+            op_z_distance_array = pickle.load(f)
 
         return op_distance_array, op_x_distance_array, op_y_distance_array, op_z_distance_array
     

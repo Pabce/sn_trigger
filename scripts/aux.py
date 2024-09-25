@@ -13,7 +13,7 @@ from scipy.optimize import minimize, curve_fit
 from scipy.special import factorial, kolmogorov
 from scipy import stats
 stats.chisqprob = lambda chisq, df: stats.chi2.sf(chisq, df)
-from numba import jit, vectorize, float64, int64
+#from numba import jit, vectorize, float64, int64
 from copy import deepcopy
 import random
 
@@ -243,18 +243,18 @@ def compute_likelihoods(fake_bg_hist, expected_bg_hist):
     
     return likelihoods
 
-@jit(nopython=True)
-def numba_factorial(k):
-    result = 1
-    for i in range(1, k + 1):
-        result *= i
+# @jit(nopython=True)
+# def numba_factorial(k):
+#     result = 1
+#     for i in range(1, k + 1):
+#         result *= i
     
-    return result
+#     return result
 
-@vectorize([float64(int64, float64)], nopython=True)
-def numba_log_poisson_pdf(k, mu):
+# @vectorize([float64(int64, float64)], nopython=True)
+# def numba_log_poisson_pdf(k, mu):
 
-    return -mu + k * np.log(mu) - np.log(numba_factorial(k))
+#     return -mu + k * np.log(mu) - np.log(numba_factorial(k))
 
 
 def pinched_spectrum(energies, average_e, alpha):

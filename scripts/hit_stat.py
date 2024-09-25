@@ -11,28 +11,36 @@ All the arguments are optional. If not specified, the default values in paramete
 python hit_stat.py --help
 '''
 
+import gui
+from gui import console
+
+import sys
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 from copy import deepcopy
 import numpy as np
 import matplotlib.pyplot as plt
 import time
 import argparse
 
-import sys
 from scipy import stats
 import itertools
 from itertools import repeat
 import multiprocessing as mp
 import random
 from rich.table import Table
+from rich.progress import track
 
 import classifier
 import aux 
 import data_loader as dl
-import clustering
+import clustering as cl
 import config as cf
-from gui import console
-#from numba import jit
-
+import plot_hits as ph
+import saver as sv
 
 
 def stat_cluster_parameter_check_parallel(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
@@ -99,7 +107,8 @@ def stat_cluster_parameter_check_parallel(sn_hit_list_per_event, sn_train_hit_li
             sn_clusters_train = sn_clusters_train[sn_hit_multiplicities_train >= 0]
             train_features, train_targets = clustering.cluster_comparison(sn_clusters_train, bg_clusters_train)
             train_time = time.time()
-            tree, _, _, _, _ = classifier.hist_gradient_boosted_tree(train_features, train_targets, n_estimators=200, optimize_hyperparameters=optimize_hyperparameters)
+            tree, _, _, _, _ = classifier.hist_gradient_boosted_tree(train_features, train_targets, 
+                                            n_estimators=200, optimize_hyperparameters=optimize_hyperparameters)
             print("Tree training time:", time.time() - train_time)
         else:
             tree = loaded_tree
@@ -531,18 +540,17 @@ def parse_arguments():
 
 
 def main():
-    console.log('--- START --->', style="bold green")
+    console.log('--- START ---> :fire: :fire: :fire:', style="bold green")
     console.log(":chipmunk:  Let's get started! :chipmunk:", style="bold yellow")
-    for i in range(5):
-        console.print(":chipmunk:  Marching Chipmunks! :chipmunk:", style="bold yellow")
-        time.sleep(0.01)
+    for i in range(3):
+        console.print("\t:chipmunk:🫡  Marching Chipmunks! :chipmunk:🫡", style="bold yellow")
 
     # Read configuration file from the command line
-    # Create the configuration class, including the "loaded" parameters
+    # Create the configuration object, including the "loaded" parameters
     config = cf.Configurator.file_from_command_line() # Instance of the config class
     
     # Create a table to display the parameters
-    table = Table(title="Parameters", title_style="bold magenta")
+    table = Table(title="Parameters", title_style="bold yellow", title_justify="left")
     table.add_column("Parameter", style="cyan", no_wrap=True)
     table.add_column("Value", style="magenta")
 
@@ -557,94 +565,251 @@ def main():
     true_tpc_size = config.get('Detector', 'true_tpc_size') * config.get('Detector', 'tpc_size_correction_factor')
     used_tpc_size = config.get('Detector', 'used_tpc_size') * config.get('Detector', 'tpc_size_correction_factor')
     once_a_month_rate = config.get('Simulation', 'fake_trigger_rate')
+    use_bdt = config.get('Simulation', 'bdt', 'use')
+    if use_bdt:
+        bdt_optimize_hyperparameters = config.get('Simulation', 'bdt', 'optimize_hyperparameters')
+    else:
+        bdt_optimize_hyperparameters = False
+    # -----------------------------------------------
 
     # Load SN and BG hits for the parameter search
     sn_file_limit_parameter_search = config.get('Simulation', 'sn_file_limit_parameter_search')
     bg_file_limit_parameter_search = config.get('Simulation', 'bg_file_limit_parameter_search')
 
     # Create a dataloader object
-    loader = dl.DataLoader(config)
+    loader = dl.DataLoader(config, logging_level=logging.INFO)
 
-    sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event,\
-    sn_train_info_per_event, bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length =\
-        loader.load_and_split(sn_file_limit_parameter_search, bg_file_limit_parameter_search)
+    sn_eff_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event,\
+    sn_train_info_per_event, bg_eff_hit_list_per_event, bg_train_hit_list_per_event, bg_length =\
+        loader.load_and_split(sn_file_limit_parameter_search, bg_file_limit_parameter_search, )
+
+    # Initialize the clustering object (for testing only, will be inside the TriggerEfficiencyComputer class)
+    clustering = cl.Clustering(config, logging_level=logging.INFO)
+
+    final_eff_sn_clusters, final_eff_sn_clusters_per_event, final_eff_sn_hit_multiplicities, final_eff_sn_hit_multiplicities_per_event = clustering.group_clustering(
+        sn_eff_hit_list_per_event, max_cluster_time=0.25, max_hit_time_diff=0.2, 
+        max_hit_distance=350, max_x_hit_distance=1e5, max_y_hit_distance=1e5, max_z_hit_distance=1e5, min_neighbours=1, 
+        min_hit_multiplicity=8, spatial_filter=True, data_type_str="SN efficiency", in_parallel=True
+    )
+    final_eff_bg_clusters, final_eff_bg_clusters_per_event, final_eff_bg_hit_multiplicities, final_eff_bg_hit_multiplicities_per_event = clustering.group_clustering(
+        bg_eff_hit_list_per_event, max_cluster_time=0.25, max_hit_time_diff=0.2, 
+        max_hit_distance=350, max_x_hit_distance=1e5, max_y_hit_distance=1e5, max_z_hit_distance=1e5, min_neighbours=1, 
+        min_hit_multiplicity=8, spatial_filter=True, data_type_str="BG efficiency", in_parallel=True
+    )
+    final_train_sn_clusters, final_train_sn_clusters_per_event, final_train_sn_hit_multiplicities, final_train_sn_hit_multiplicities_per_event = clustering.group_clustering(
+        sn_train_hit_list_per_event, max_cluster_time=0.25, max_hit_time_diff=0.2, 
+        max_hit_distance=350, max_x_hit_distance=1e5, max_y_hit_distance=1e5, max_z_hit_distance=1e5, min_neighbours=1, 
+        min_hit_multiplicity=8, spatial_filter=True, data_type_str="SN training", in_parallel=True
+    )
+    final_train_bg_clusters, final_train_bg_clusters_per_event, final_train_bg_hit_multiplicities, final_train_bg_hit_multiplicities_per_event = clustering.group_clustering(
+        bg_train_hit_list_per_event, max_cluster_time=0.25, max_hit_time_diff=0.2, 
+        max_hit_distance=350, max_x_hit_distance=1e5, max_y_hit_distance=1e5, max_z_hit_distance=1e5, min_neighbours=1, 
+        min_hit_multiplicity=8, spatial_filter=True, data_type_str="BG training", in_parallel=True
+    )
+
+    # Create a table to display some statistics
+    table = Table(title="Clustering Statistics", title_style="bold yellow", title_justify="left")
+    table.add_column("Category", style="green", no_wrap=True)
+    table.add_column("Efficiency", style="red")
+    table.add_column("Training", style="blue")
+
+    table.add_row("Number of SN clusters",
+                f"{len(final_eff_sn_clusters):,}",
+                f"{len(final_train_sn_clusters):,}")
+    table.add_row("Number of BG clusters",
+                f"{len(final_eff_bg_clusters):,}",
+                f"{len(final_train_bg_clusters):,}")
+    table.add_row("Average clusters per event (SN)",
+                f"{np.mean([len(cluster_list) for cluster_list in final_eff_sn_clusters_per_event]):.2f}",
+                f"{np.mean([len(cluster_list) for cluster_list in final_train_sn_clusters_per_event]):.2f}")
+    table.add_row("Average clusters per \"event\" (BG)",
+                f"{np.mean([len(cluster_list) for cluster_list in final_eff_bg_clusters_per_event]):.2f}",
+                f"{np.mean([len(cluster_list) for cluster_list in final_train_bg_clusters_per_event]):.2f}")
+    table.add_row("Average hit multiplicity (SN)",
+                f"{np.mean(final_eff_sn_hit_multiplicities):.2f}",
+                f"{np.mean(final_train_sn_hit_multiplicities):.2f}")
+    table.add_row("Average hit multiplicity (BG)",
+                f"{np.mean(final_eff_bg_hit_multiplicities):.2f}",
+                f"{np.mean(final_train_bg_hit_multiplicities):.2f}")
+
+    console.log(table)
+
+    # Extract cluster features for BDT training
+    # for cluster in track(final_train_sn_clusters):
+    #     features = cl.compute_cluster_features(cluster, detector_type="VD")
+        #console.log(features)
     
+    bdt_features = "all"
+    #bdt_features = ['num_hits_most_populated_opchannel', 'wall_hit_fraction', 'max_z_diff', 'max_y_diff']
+    
+    sn_train_features_array, sn_train_feature_names = cl.group_compute_cluster_features(
+        final_train_sn_clusters, detector_type="VD", data_type_str="SN train", features_to_return=bdt_features)
+    bg_train_features_array, _ = cl.group_compute_cluster_features(
+        final_train_bg_clusters, detector_type="VD", data_type_str="BG train", features_to_return=bdt_features)
+    sn_train_targets = np.ones(len(sn_train_features_array))
+    bg_train_targets = np.zeros(len(bg_train_features_array))
+
+    sn_eff_features_array, _ = cl.group_compute_cluster_features(
+        final_eff_sn_clusters, detector_type="VD", data_type_str="SN efficiency", features_to_return=bdt_features)
+    bg_eff_features_array, _ = cl.group_compute_cluster_features(
+        final_eff_bg_clusters, detector_type="VD", data_type_str="BG efficiency", features_to_return=bdt_features)
+    sn_eff_targets = np.ones(len(sn_eff_features_array))
+    bg_eff_targets = np.zeros(len(bg_eff_features_array))
+
+    console.log(sn_train_features_array.shape)
+    console.log(bg_train_features_array.shape)
+
+    console.log(f"[magenta]Feature names: {sn_train_feature_names}")
+
+    # Combine the features and targets
+    features_train = np.vstack([sn_train_features_array, bg_train_features_array])
+    targets_train = np.concatenate([sn_train_targets, bg_train_targets])
+
+    features_eff = np.vstack([sn_eff_features_array, bg_eff_features_array])
+    targets_eff = np.concatenate([sn_eff_targets, bg_eff_targets])
+    
+    # Train a BDT
+    with console.status(f'[bold green]Training BDT... Optimize hyperparmeters: {bdt_optimize_hyperparameters}'):
+        hist_boosted_tree, test_features, test_targets, test_score, train_features, train_targets, train_score =\
+            classifier.hist_gradient_boosted_tree(features_train, targets_train, n_estimators=200,
+             optimize_hyperparameters=bdt_optimize_hyperparameters)
+
+    console.log(f"Training features: {train_features.shape}")
+    console.log(f"Training targets: {train_targets.shape}")
+    console.log(f"Test features: {test_features.shape}")
+    console.log(f"Test targets: {test_targets.shape}")
+    console.log(f"Train score: {train_score}")
+    console.log(f"Test score: {test_score}")
+
+    # The above is an sklearn HistGradientBoostingClassifier.fit() object.
+    # Save the BDT 
+    hist_boosted_tree_with_config = sv.DataWithConfig(hist_boosted_tree, config)
+    save_dir = config.get("IO", "pickle_save_dir")
+    hist_boosted_tree_with_config.save(f"{save_dir}/hist_boosted_tree.pkl")
+    # Save the test/train features and targets
+    train_with_config = sv.DataWithConfig([train_features, train_targets, sn_train_feature_names], config)
+    test_with_config = sv.DataWithConfig([test_features, test_targets, sn_train_feature_names], config)
+    train_with_config.save(f"{save_dir}/train_features_targets.pkl")
+    test_with_config.save(f"{save_dir}/test_features_targets.pkl")
+
+    # And the efficiency features and targets
+    eff_with_config = sv.DataWithConfig([features_eff, targets_eff, sn_train_feature_names], config)
+    eff_with_config.save(f"{save_dir}/eff_features_targets.pkl")
+
+    #print(final_sn_clusters[0])
+    # sn_time_candidate_clusters = []
+    # for i in range(100):
+    #     sn_time_candidate_clusters.extend(
+    #         clustering.time_clustering(sn_eff_hit_list_per_event[i], max_cluster_time=0.25, max_hit_time_diff=0.2, min_hit_multiplicity=5)[0]
+    #     )
+    # logger.info(f"SN time candidate clusters: {len(sn_time_candidate_clusters)}")
+    # bg_time_candidate_clusters, bg_time_candidate_hit_multiplicities =\
+    #                     clustering.time_clustering(bg_eff_hit_list_per_event[0], max_cluster_time=0.25, max_hit_time_diff=0.2, min_hit_multiplicity=5)
+    # logger.info(f"BG time candidate clusters: {len(bg_time_candidate_clusters)}")
+    
+    # hitplotter = ph.HitPlotter(config, logging_level=logging.INFO)
+    # for tcc in sn_time_candidate_clusters:
+    #     sc1 = clustering.algorithm_spatial_neighbour_grouping(tcc, max_hit_distance=400)
+    #     sc2 = clustering.algorithm_spatial_naive(tcc, max_hit_distance=400, min_neighbours=1)
+    #     hitplotter.plot_3d_clusters(tcc, sc1, plot_complement_cluster=True)
+    #     hitplotter.plot_3d_clusters(tcc, sc2)
+
+    # for tcc in bg_time_candidate_clusters:
+    #     clustering.algorithm_spatial_neighbour_grouping(tcc, max_hit_distance=350, min_hit_multiplicity=8)
+
+    # for tcc in bg_time_candidate_clusters:
+    #     space_candidate_cluster = cluster.enforce_spatial_correlation(tcc, max_hit_distance=220, min_neighbours=3)
+    #     console.print(tcc.shape)
+    #     console.print(space_candidate_cluster.shape)
+    #     console.print('........')
+    
+    # console.log("Starting clustering SN...")
+    # sn_clusters, sn_hit_multiplicities = clustering.full_clustering(sn_eff_hit_list_per_event[0], max_cluster_time=0.25, max_hit_time_diff=0.2, 
+    #     max_hit_distance=220, max_x_hit_distance=1e5, max_y_hit_distance=1e5, max_z_hit_distance=1e5, min_neighbours=2, min_hit_multiplicity=8,
+    #     spatial_filter=True)
+
+    # console.log("Starting clustering BG...")
+    # bg_clusters, bg_hit_multiplicities = clustering.full_clustering(bg_eff_hit_list_per_event[0], max_cluster_time=0.25, max_hit_time_diff=0.2, 
+    #     max_hit_distance=220, max_x_hit_distance=1e5, max_y_hit_distance=1e5, max_z_hit_distance=1e5, min_neighbours=2, min_hit_multiplicity=8,
+    #     spatial_filter=True)
+    
+    # for sc in sn_clusters:
+    #     print(sc.shape)
+    # for bc in bg_clusters:
+    #     print(bc.shape)
+
     exit("STOP")
 
     # Calculate the efficiency (the actual computation)
     # First, we need to read a bunch of parameters from the config (or maybe not and a class will, we'll see...)
 
+    #efficiency_computer = ec.TriggerEfficiencyComputer(config)
 
+    # The actual computation
+    # TODO: fix and tidy up the ifs below
+    if calculate_eff_curve or calculate_eff_curve_from_scratch:
+        # This will attemp to load the efficiency data for a set of parameters, and then calculate it for a set of distances.
+        # If the data file does not exist, it will run the whole algorithm.
 
-
-
-
-
-    # # The actual computation
-    # # TODO: fix and tidy up the ifs below
-    # if calculate_eff_curve or calculate_eff_curve_from_scratch:
-    #     # This will attemp to load the efficiency data for a set of parameters, and then calculate it for a set of distances.
-    #     # If the data file does not exist, it will run the whole algorithm.
-
-    #     if calculate_eff_curve:
-    #         try:
-    #             if INPUT_NAME is None:
-    #                 eff_data, _ = sl.load_efficiency_data(
-    #                         sim_parameters=[FAKE_TRIGGER_RATE, BURST_TIME_WINDOW, DISTANCE_TO_OPTIMIZE, SIM_MODE, ADC_MODE, DETECTOR, CLASSIFY, AVERAGE_ENERGY, ALPHA], data_type="data")
-    #             else:
-    #                 eff_data, _ = sl.load_efficiency_data(file_name=INPUT_NAME, data_type="data")
-    #         except KeyError:
-    #             eff_data = optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
-    #                 bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, once_a_month_rate, save=True)
+        if calculate_eff_curve:
+            try:
+                if INPUT_NAME is None:
+                    eff_data, _ = sl.load_efficiency_data(
+                            sim_parameters=[FAKE_TRIGGER_RATE, BURST_TIME_WINDOW, DISTANCE_TO_OPTIMIZE, SIM_MODE, ADC_MODE, DETECTOR, CLASSIFY, AVERAGE_ENERGY, ALPHA], data_type="data")
+                else:
+                    eff_data, _ = sl.load_efficiency_data(file_name=INPUT_NAME, data_type="data")
+            except KeyError:
+                eff_data = optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
+                    bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, once_a_month_rate, save=True)
         
-    #     elif calculate_eff_curve_from_scratch:
-    #         eff_data = optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
-    #                 bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, once_a_month_rate,
-    #                 max_cluster_times=MAX_CLUSTER_TIMES, max_hit_time_diffs=MAX_HIT_TIME_DIFFS, max_hit_distances=MAX_HIT_DISTANCES,
-    #                 mcms=np.arange(LOWER_MIN_HIT_MULTUPLICITY, UPPER_MIN_HIT_MULTUPLICITY + 1), optimize_hyperparameters=False, save=True, verbose=1)
+        elif calculate_eff_curve_from_scratch:
+            eff_data = optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
+                    bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, once_a_month_rate,
+                    max_cluster_times=MAX_CLUSTER_TIMES, max_hit_time_diffs=MAX_HIT_TIME_DIFFS, max_hit_distances=MAX_HIT_DISTANCES,
+                    mcms=np.arange(LOWER_MIN_HIT_MULTUPLICITY, UPPER_MIN_HIT_MULTUPLICITY + 1), optimize_hyperparameters=False, save=True, verbose=1)
 
-    #         trigger_efficiency, opt_parameters, opt_mcm, opt_tree, all_effs, sim_parameters = eff_data
-    #         ct, ht, hd, xhd, yhd, zhd, distance_to_optimize, classifier_threshold, mcm = opt_parameters
+            trigger_efficiency, opt_parameters, opt_mcm, opt_tree, all_effs, sim_parameters = eff_data
+            ct, ht, hd, xhd, yhd, zhd, distance_to_optimize, classifier_threshold, mcm = opt_parameters
 
-    #         print("----- Found optimal clustering parameters ----- RERUNNING WITH FULL STATISTICS -----")
+            print("----- Found optimal clustering parameters ----- RERUNNING WITH FULL STATISTICS -----")
             
-    #         # Now, rerun this with full statistics for the optimal parameters
-    #         sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event, bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length =\
-    #             load_and_split(SN_FILE_LIMIT, BG_FILE_LIMIT, detector)
+            # Now, rerun this with full statistics for the optimal parameters
+            sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event, bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length =\
+                load_and_split(SN_FILE_LIMIT, BG_FILE_LIMIT, detector)
             
-    #         eff_data = optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
-    #                 bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, once_a_month_rate,
-    #                 max_cluster_times=[ct], max_hit_time_diffs=[ht], max_hit_distances=[hd],
-    #                 mcms=[mcm], optimize_hyperparameters=False, save=True)
+            eff_data = optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
+                    bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, once_a_month_rate,
+                    max_cluster_times=[ct], max_hit_time_diffs=[ht], max_hit_distances=[hd],
+                    mcms=[mcm], optimize_hyperparameters=False, save=True)
 
-    #     distances = DISTANCES
-    #     print(eff_data)
-    #     opt_parameters = eff_data[1]
-    #     opt_mcm = eff_data[2]
-    #     opt_tree = eff_data[3]
+        distances = DISTANCES
+        print(eff_data)
+        opt_parameters = eff_data[1]
+        opt_mcm = eff_data[2]
+        opt_tree = eff_data[3]
 
-    #     eff_curve_data = get_efficiency_curve(opt_parameters, sn_hit_list_per_event, sn_info_per_event, bg_hit_list_per_event, bg_length, detector, 
-    #                                         true_tpc_size, used_tpc_size, distances, opt_mcm, opt_tree, once_a_month_rate, number_of_tests=400, save=True, plot=True)
+        eff_curve_data = get_efficiency_curve(opt_parameters, sn_hit_list_per_event, sn_info_per_event, bg_hit_list_per_event, bg_length, detector, 
+                                            true_tpc_size, used_tpc_size, distances, opt_mcm, opt_tree, once_a_month_rate, number_of_tests=400, save=True, plot=True)
         
-    # else:
-    #     eff_data = optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
-    #             bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, once_a_month_rate,
-    #             max_cluster_times=MAX_CLUSTER_TIMES, max_hit_time_diffs=MAX_HIT_TIME_DIFFS, max_hit_distances=MAX_HIT_DISTANCES,
-    #             mcms=np.arange(LOWER_MIN_HIT_MULTUPLICITY, UPPER_MIN_HIT_MULTUPLICITY + 1), optimize_hyperparameters=False, save=True)
+    else:
+        eff_data = optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
+                bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, once_a_month_rate,
+                max_cluster_times=MAX_CLUSTER_TIMES, max_hit_time_diffs=MAX_HIT_TIME_DIFFS, max_hit_distances=MAX_HIT_DISTANCES,
+                mcms=np.arange(LOWER_MIN_HIT_MULTUPLICITY, UPPER_MIN_HIT_MULTUPLICITY + 1), optimize_hyperparameters=False, save=True)
 
-    #     trigger_efficiency, opt_parameters, opt_mcm, opt_tree, all_effs, sim_parameters = eff_data
-    #     ct, ht, hd, xhd, yhd, zhd, distance_to_optimize, classifier_threshold, mcm = opt_parameters
+        trigger_efficiency, opt_parameters, opt_mcm, opt_tree, all_effs, sim_parameters = eff_data
+        ct, ht, hd, xhd, yhd, zhd, distance_to_optimize, classifier_threshold, mcm = opt_parameters
 
-    #     print("----- Found optimal clustering parameters ----- RERUNNING WITH FULL STATISTICS -----")
+        print("----- Found optimal clustering parameters ----- RERUNNING WITH FULL STATISTICS -----")
         
-    #     # Now, rerun this with full statistics for the optimal parameters
-    #     sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event, bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length =\
-    #         load_and_split(SN_FILE_LIMIT, BG_FILE_LIMIT, detector)
+        # Now, rerun this with full statistics for the optimal parameters
+        sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event, bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length =\
+            load_and_split(SN_FILE_LIMIT, BG_FILE_LIMIT, detector)
         
-    #     eff_data = optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
-    #             bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, once_a_month_rate,
-    #             max_cluster_times=[ct], max_hit_time_diffs=[ht], max_hit_distances=[hd],
-    #             mcms=[mcm], optimize_hyperparameters=True, save=True)
+        eff_data = optimize_efficiency(sn_hit_list_per_event, sn_train_hit_list_per_event, sn_info_per_event, sn_train_info_per_event,
+                bg_hit_list_per_event, bg_train_hit_list_per_event, bg_length, detector, true_tpc_size, used_tpc_size, once_a_month_rate,
+                max_cluster_times=[ct], max_hit_time_diffs=[ht], max_hit_distances=[hd],
+                mcms=[mcm], optimize_hyperparameters=True, save=True)
 
 
 if __name__ == '__main__':

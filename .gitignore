@@ -2,9 +2,12 @@
 saved_effs
 saved_pickles
 *.pcl
+*.pkl
 *.fcl
 *.json
 aux_data
 .vscode
 .ipynb_checkpoints
 __pycache__
+*.pyc
+.venv
