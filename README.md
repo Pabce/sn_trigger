@@ -14,9 +14,9 @@ This script handles:
 ## Usage
 
 The script is designed to be run from the command line. It accepts command-line arguments for:
-- The configuration file
-- Optional input file paths
-- Optional output file paths and output info file paths
+- The configuration file.
+- Optional input file paths.
+- Optional output file paths and output info file paths.
 
 A typical invocation might look like:
 
@@ -25,15 +25,6 @@ python hit_stat.py --config path/to/config_file.yaml --input path/to/input_file 
 ```
 
 > **Note:** The command-line arguments are parsed using the `parse_arguments()` function, and any provided file paths will override the settings in the configuration file.
-
-## Configuration
-
-The script expects a configuration file with several sections such as:
-- **Detector:** Parameters like `true_tpc_size`, `used_tpc_size`, and `tpc_size_correction_factor`.
-- **Simulation:** Parameters such as `burst_time_window`, `distance_to_evaluate`, and `fake_trigger_rate`.
-- **Input/Output:** File paths for input data, output data, and additional information.
-- **Physics:** Parameters related to the interaction number (e.g., at 10 kpc) and other physics-based scaling factors.
-- **Stages:** A list of stages that define the processing pipeline (e.g., `load_events`, `clustering`, etc.).
 
 ## Configuring a Run Using `default_config_vd.yaml`
 
@@ -74,8 +65,8 @@ The configuration file `configs/default_config_vd.yaml` provides a full set of p
 
 - **Detector:**
   - Contains detector-specific settings:
-    - `type`: The detector type (e.g., VD).
-    - `true_tpc_size` and `used_tpc_size`: Define the full and active volumes of the detector.
+    - `type`: The detector type (VD or HD).
+    - `true_tpc_size` and `used_tpc_size`: Define the full and simulated volumes of the detector.
     - `tpc_size_correction_factor`: Correction factor to adjust the active volume.
     - `sn_event_multiplier`: Scaling factor to account for light flashes outside the active volume.
     - `optical_channel_number`: The number of optical channels in the detector.
@@ -87,9 +78,9 @@ The configuration file `configs/default_config_vd.yaml` provides a full set of p
 
 - **External Libraries:** `numpy`, `matplotlib`, `scipy`, and `rich` (for enhanced console output and table formatting).
 - **Custom Modules:**  
-  - `gui` and `plot_hits` for visualization  
-  - `classifier` and `clustering` for data processing  
-  - `data_loader` for I/O operations  
-  - `config` and `argument_parser` for configuration management  
-  - `statistical_comparison` for statistical tests  
-  - Additional utility modules like `aux`, `stages`, and `stage_manager`
+  - `gui` and `plot_hits` for visualization.
+  - `classifier` and `clustering` for data processing.
+  - `data_loader` for I/O operations.
+  - `config` and `argument_parser` for configuration management.
+  - `statistical_comparison` for statistical tests.
+  - Additional utility modules like `aux`, `stages`, and `stage_manager`.
