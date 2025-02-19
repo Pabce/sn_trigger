@@ -1,6 +1,8 @@
 import sys
 import numpy as np
+import json
 
+# Function to get the total size of an object in bytes
 def get_total_size(obj, seen=None):
     # Keep track of already seen objects to avoid infinite recursion
     if seen is None:
@@ -35,3 +37,14 @@ def get_total_size(obj, seen=None):
 
     # Return the total computed size
     return size
+
+# Custom JSON encoder for numpy types
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)

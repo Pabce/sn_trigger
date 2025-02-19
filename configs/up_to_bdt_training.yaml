@@ -1,0 +1,47 @@
+
+DEFAULT_CONFIG_FILE: ../configs/default_config_vd.yaml
+
+Stages:
+  - load_events
+  - clustering
+  - cluster_feature_extraction
+  - bdt_training
+Input:
+  input_data_file: None # Overrideable by the command line
+
+Output:
+  verbosity: INFO # DEBUG, INFO, WARNING, ERROR
+  stages_with_saved_output_data: last # "all", "last", None, or list of stages
+  # Output file for the trigger output 
+  # (must be a single file if stages_with_saved_output is set to "last", else a dictionary with keys as stage names)
+  output_data_file: ../pickle_outputs/up_to_bdt_output.pkl # Overrideable by the command line (only if stages_with_saved_output is set to "last")
+  output_info_file: ../info_outputs/up_to_bdt_info.dat
+
+Simulation:
+
+  # Stage load_events
+  load_events:
+    # Number of files to load for SN and BG
+    sn_file_limit: 140
+    bg_file_limit: 40
+
+  # Stage clustering
+  clustering:
+    mode: single
+    parameters:
+      max_cluster_time: 0.4 # In microseconds
+      max_hit_time_diff: 0.217 # In microseconds
+      max_hit_distance: 535 # In cm
+      min_hit_multiplicity: 13
+      min_neighbours: 1
+  
+  # Stage cluster_feature_extraction
+  cluster_feature_extraction:
+    cluster_features: "all" # "all" or list of features
+
+  # Stage bdt_training
+  bdt_training:
+    use: True
+    optimize_hyperparameters: True
+    optimize_hyperparameters_random_state: 42 # Integer or None
+    threshold: 0.5 # Only used for hit_multiplicity type histogram

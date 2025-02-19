@@ -38,18 +38,20 @@ class DataLoader:
         # self.log.exception("This is an exception")
 
 
-    def load_and_split(self, sn_limit, bg_limit, train_split=0.5, shuffle=False):
+    def load_and_split(self, sn_limit, bg_limit, shuffle=False):
         '''
         Load the signal and backgrounds and split them into train and efficiency computation sets
         '''
 
         # Config reads ----
-        # ENERGY LIMIT TO TRAIN THE BDT
-        use_bdt = self.config.get("Simulation", "bdt", "use")
-        bdt_energy_limit = self.config.get("Simulation", "bdt", "energy_limit") if use_bdt else 1e5
-        bg_sample_length = self.config.get("IO", "bg_sample_length")
-        bg_sample_number_per_file = self.config.get("IO", "bg_sample_number_per_file")
-        load_data_in_parallel = True #self.config.get("IO", "load_data_in_parallel")
+        # ENERGY LIMIT TO TRAIN THE BDT (only usable if the BDT is used)
+        split_for_classifier = self.config.get("Simulation", "load_events", "split_for_classifier")
+        classifier_energy_limit = self.config.get("Simulation", "load_events", "classifier_energy_limit") if split_for_classifier else 1e5
+        train_split = self.config.get("Simulation", "load_events", "train_split")
+
+        bg_sample_length = self.config.get("DataFormat", "bg_sample_length")
+        bg_sample_number_per_file = self.config.get("DataFormat", "bg_sample_number_per_file")
+        load_data_in_parallel = self.config.get("Simulation", "load_events", "load_data_in_parallel")
         # -----------------
 
         self.log.info("Loading SN data...")
@@ -58,7 +60,7 @@ class DataLoader:
         
         self.log.info("Loading BG data...")
         bg_total_hits, bg_hit_list_per_event, _, _= self.load_all_backgrounds_chunky_type_separated(limit=bg_limit, load_data_in_parallel=load_data_in_parallel)
-        bg_length = len(bg_hit_list_per_event) * bg_sample_length # in miliseconds
+        total_bg_time_window = len(bg_hit_list_per_event) * bg_sample_length # in miliseconds
         self.log.info("BG data loaded")
 
         del _
@@ -83,86 +85,43 @@ class DataLoader:
 
         # We need to spit the SN and BG events for training the BDT and efficiency evaluation 
         # (this is not a train/test split, that is done in the BDT training later)
-        if use_bdt:
+        if split_for_classifier:
             split_point_sn = int(len(sn_info_per_event) * train_split)
             split_point_bg = int(len(bg_hit_list_per_event) * train_split)
         else:
             split_point_sn = 0
             split_point_bg = 0
 
-        sn_train_info_per_event = sn_info_per_event[:split_point_sn]
-        sn_train_hit_list_per_event = sn_hit_list_per_event[:split_point_sn] 
+        sn_bdt_info_per_event = sn_info_per_event[:split_point_sn]
+        sn_bdt_hit_list_per_event = sn_hit_list_per_event[:split_point_sn] 
 
         # Filter the SN events that are above the BDT energy limit
-        sn_train_hit_list_per_event = sn_train_hit_list_per_event[sn_train_info_per_event[:, 0] < bdt_energy_limit]
-        sn_train_info_per_event = sn_train_info_per_event[sn_train_info_per_event[:, 0] < bdt_energy_limit]
+        sn_bdt_hit_list_per_event = sn_bdt_hit_list_per_event[sn_bdt_info_per_event[:, 0] < classifier_energy_limit]
+        sn_bdt_info_per_event = sn_bdt_info_per_event[sn_bdt_info_per_event[:, 0] < classifier_energy_limit]
 
         # Do the second split
         sn_eff_info_per_event = sn_info_per_event[split_point_sn:]
         sn_eff_hit_list_per_event = sn_hit_list_per_event[split_point_sn:]
         
-        bg_train_hit_list_per_event = bg_hit_list_per_event[:split_point_bg]
+        bg_bdt_hit_list_per_event = bg_hit_list_per_event[:split_point_bg]
         bg_eff_hit_list_per_event = bg_hit_list_per_event[split_point_bg:]
         #console.log(split_point_bg, len(bg_hit_list_per_event))
 
-        # Display memory usage of the loaded data, in MB using a rich table
-        # TODO: maybe move the tables to gui.py? Or elsewhere?
-        table = Table(title="Memory Usage of Loaded Data", title_style="bold yellow", title_justify="left")
-
-        table.add_column("Data Type", justify="left", style="green", no_wrap=True)
-        table.add_column("Memory Usage (MB)", justify="right", style="red")
-
-        table.add_row("SN hits", f"{np.sum([a.nbytes for a in sn_hit_list_per_event])  / 1024**2:.2f}")
-        table.add_row("SN event info", f"{get_total_size(sn_info_per_event) / 1024**2:.2f}")
-        table.add_row("BG hits", f"{np.sum([a.nbytes for a in bg_hit_list_per_event]) / 1024**2:.2f}")
-
-        console.log(table)
-
-        # Create a rich table to display the statistics
-        table = Table(title="Data Loading Statistics", title_style="bold yellow", title_justify="left")
-
-        table.add_column("Category", justify="left", style="green", no_wrap=True)
-        table.add_column("Total", justify="right", style="bold magenta")
-        table.add_column("Efficiency", justify="right", style="bold red")
-        table.add_column("Training", justify="right", style="bold blue")
-
-        table.add_row("Number of SN hits", 
-                    f"{np.sum([len(event) for event in sn_hit_list_per_event]):,}",
-                    f"{np.sum([len(event) for event in sn_eff_hit_list_per_event]):,}",
-                    f"{np.sum([len(event) for event in sn_train_hit_list_per_event]):,}")
-        table.add_row("Number of BG hits", 
-                    f"{np.sum([len(event) for event in bg_hit_list_per_event]):,}",
-                    f"{np.sum([len(event) for event in bg_eff_hit_list_per_event]):,}",
-                    f"{np.sum([len(event) for event in bg_train_hit_list_per_event]):,}")
-        table.add_row("Total SN events", 
-                    f"{len(sn_info_per_event):,}",
-                    f"{len(sn_eff_info_per_event):,}",
-                    f"{len(sn_train_info_per_event):,}")
-        table.add_row("Total BG \"events\"", 
-                    f"{len(bg_hit_list_per_event):,}",
-                    f"{len(bg_eff_hit_list_per_event):,}",
-                    f"{len(bg_train_hit_list_per_event):,}")
-        table.add_row("Total BG length (ms)",
-                    f"{bg_length:,}",
-                    f"{len(bg_eff_hit_list_per_event) * bg_sample_length:,}",
-                    f"{len(bg_train_hit_list_per_event) * bg_sample_length:,}")
-
-        console.log(table)
-
-        return (sn_eff_hit_list_per_event, sn_train_hit_list_per_event, sn_eff_info_per_event,
-                 sn_train_info_per_event, bg_eff_hit_list_per_event, bg_train_hit_list_per_event, bg_length)
+        return (sn_hit_list_per_event, bg_hit_list_per_event, sn_info_per_event,
+                sn_eff_hit_list_per_event, sn_bdt_hit_list_per_event, sn_eff_info_per_event,
+                sn_bdt_info_per_event, bg_eff_hit_list_per_event, bg_bdt_hit_list_per_event,
+                total_bg_time_window)
 
 
     def load_all_backgrounds_chunky_type_separated(self, limit=1, offset=0, load_data_in_parallel=True):
         # Config reads ----
         detector_type = self.config.get("Detector", "type")
-        bg_data_dir = self.config.get("IO", "bg_data_dir")
-        # adc_mode = self.config.get("Simulation", "adc_mode")
-        sim_mode = self.config.get("Simulation", "sim_mode")
+        bg_data_dir = self.config.get("Simulation", "load_events", "bg_data_dir")
+        sim_mode = self.config.get('Simulation', 'load_events', 'sim_mode')
         bg_types = self.config.get("Backgrounds")
-        bg_sample_number_per_file = self.config.get("IO", "bg_sample_number_per_file")
-        startswith = self.config.get("IO", "bg_hit_file_start_pattern")
-        endswith = self.config.get("IO", "bg_hit_file_end_pattern").format(sim_mode)
+        bg_sample_number_per_file = self.config.get("DataFormat", "bg_sample_number_per_file")
+        startswith = self.config.get("Simulation", "load_events", "bg_hit_file_start_pattern")
+        endswith = self.config.get("Simulation", "load_events", "bg_hit_file_end_pattern").format(sim_mode)
         # -----------------
 
         bg_total_hits = []
@@ -265,14 +224,13 @@ class DataLoader:
 
         # Config reads ----
         detector_type = self.config.get("Detector", "type")
-        sn_data_dir = self.config.get("IO", "sn_data_dir")
-        #adc_mode = self.config.get("Simulation", "adc_mode")
-        sim_mode = self.config.get("Simulation", "sim_mode")
-        event_num = self.config.get("IO", "sn_event_number_per_file")
-        startswith = self.config.get("IO", "sn_hit_file_start_pattern")
-        endswith = self.config.get("IO", "sn_hit_file_end_pattern").format(sim_mode)
-        info_endswith = self.config.get("IO", "sn_info_file_end_pattern")
-        photon_endswith = self.config.get("IO", "photon_file_end_pattern")
+        sn_data_dir = self.config.get("Simulation", "load_events", "sn_data_dir")
+        sim_mode = self.config.get('Simulation', 'load_events', 'sim_mode')
+        event_num = self.config.get("DataFormat", "sn_event_number_per_file")
+        startswith = self.config.get("Simulation", "load_events", "sn_hit_file_start_pattern")
+        endswith = self.config.get("Simulation", "load_events", "sn_hit_file_end_pattern").format(sim_mode)
+        info_endswith = self.config.get("Simulation", "load_events", "sn_info_file_end_pattern")
+        photon_endswith = self.config.get("Simulation", "load_events", "photon_file_end_pattern")
         # -----------------
 
         # Collect valid file names
@@ -383,7 +341,7 @@ class DataLoader:
                             uproot_neutrino = uproot_file["analysistree/anatree"]
                             # Skip if the tree has less entries than the event number we need
                             if len(uproot_neutrino['enu_truth'].array()) < event_num:
-                                raise uproot.exceptions.KeyInFileError
+                                raise uproot.exceptions.KeyInFileError("Not enough events in the tree")
                     except uproot.exceptions.KeyInFileError as e:
                         logging.warning(f"Corrupted *ana file {info_filename}: {e}. Skipping.")
                         continue
@@ -624,6 +582,7 @@ class DataLoader:
 
 
     # Load neutrino (MC truth) info for SN events
+    # TODO: Make sn_info_per_event a dictionary
     @staticmethod
     def load_neutrino_info(file_name):
         info_per_event = []
@@ -684,9 +643,24 @@ class DataLoader:
 
     # TIME PROFILE IS IN MS!!!!
     def load_time_profile(self):
-        data_dir = self.config.get("IO", "aux_data_dir")
+        data_dir = self.config.get("DataFormat", "aux_data_dir")
         uproot_time_profile = uproot.open(data_dir + "TimeProfile.root")["h_MarlTime"]
+        uproot_time_profile_zoomed = uproot.open(data_dir + "TimeProfile.root")["h_MarlTimeZoom"]
         time_profile = uproot_time_profile.to_numpy()
+        time_profile_zoomed = uproot_time_profile_zoomed.to_numpy()
+
+        # Time to do some stiching!
+        # Step 1: Find the total number of events in the zoomed histogram
+        total_zoomed = np.sum(time_profile_zoomed[0])
+        # Step 2: Find the total number of events in the first bin of the non-zoomed histogram
+        first_bin_non_zoomed = time_profile[0][0]
+        # Step 3: Remove the total number of events in the zoomed histogram from the first bin of the non-zoomed histogram
+        time_profile[0][0] = first_bin_non_zoomed - total_zoomed
+        # Step 4: stitch the two histograms together
+        new_time_profile_vals = np.concatenate((time_profile_zoomed[0], time_profile[0]))
+        new_time_profile_bins = np.concatenate((time_profile_zoomed[1], time_profile[1][1:]))
+
+        time_profile = (new_time_profile_vals, new_time_profile_bins)
 
         # print(time_profile[0].shape)
         # print(time_profile[1].shape)
@@ -694,7 +668,9 @@ class DataLoader:
         # plt.yscale('log')
         # plt.show()
 
-        return time_profile[1][:-1], time_profile[0][:]
+        self.log.info(f"SN time profile loaded from {data_dir}TimeProfile.root")
+
+        return time_profile[1][:], time_profile[0][:]
 
     # Photon information from SimPhotonsLite (before Detsim and Reco)
     @staticmethod

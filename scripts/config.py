@@ -5,11 +5,13 @@ Contains the Config class, which is used to load configuration files and access 
 Also contains auxiliary functions to load the global parameters used in the simulation.
 '''
 
+import os
 import yaml
 import numpy as np
 import pickle
 import argparse
 import logging
+import mergedeep
 
 class Configurator:
     DEFAULT_CONFIG_FILE_VD = "../configs/default_config_vd.yaml"
@@ -35,47 +37,43 @@ class Configurator:
 
     # Constructor for when the config file is grabbed from the command line
     @classmethod
-    def file_from_command_line(cls):
-        config_path = cls.parse_arguments()
+    def from_file(cls, config_path, logging_level=logging.INFO):
+        # Get the absolute path of the config file, if it is not already
+        if not os.path.isabs(config_path):
+            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), config_path)
 
         # Get the default config file from the active config file
         with open(config_path, 'r') as file:
             temp_yaml_dict = yaml.safe_load(file)
 
-            # If the default config file is "None", use the active config file as the default
-            if temp_yaml_dict["DEFAULT_CONFIG_FILE"] == "None":
+            # If the default config file is None, use the active config file as the default
+            if temp_yaml_dict["DEFAULT_CONFIG_FILE"] is None:
                 default_config_path = config_path
             else:
                 default_config_path = temp_yaml_dict["DEFAULT_CONFIG_FILE"]
+        
+        # Get the absolute path of the default config file, if it is not already
+        if not os.path.isabs(default_config_path):
+            default_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), default_config_path)
 
-        return cls(config_path=config_path, default_config_path=default_config_path)
+        return cls(config_path=config_path, default_config_path=default_config_path, logging_level=logging_level)
     
     # Constructor for using the default config file for either detector
     @classmethod
-    def detector_default(cls, detector_type):
+    def detector_default(cls, detector_type, logging_level=logging.INFO):
         if detector_type == "VD":
-            return cls(config_path=cls.DEFAULT_CONFIG_FILE_VD, default_config_path=cls.DEFAULT_CONFIG_FILE_VD)
+            return cls(config_path=cls.DEFAULT_CONFIG_FILE_VD, default_config_path=cls.DEFAULT_CONFIG_FILE_VD, logging_level=logging_level)
         elif detector_type == "HD":
-            return cls(config_path=cls.DEFAULT_CONFIG_FILE_HD, default_config_path=cls.DEFAULT_CONFIG_FILE_HD)
+            return cls(config_path=cls.DEFAULT_CONFIG_FILE_HD, default_config_path=cls.DEFAULT_CONFIG_FILE_HD, logging_level=logging_level)
         else:
             raise ValueError("Invalid detector type")
 
-    def load_coodinates(self):
-        # Load coordinate arrays
-        detector = self.get("Detector", "type")
-        x, y, z = self.load_coordinate_arrays(detector)
+    # Return the full dictionary, with the active config file values overriding the default config file values
+    # Note: does not include the "loaded" member variables
+    def get_dict(self):
+        merged_dict = mergedeep.merge({}, self.default_yaml_dict, self.yaml_dict)
 
-        self.loaded["x_coords"] = x
-        self.loaded["y_coords"] = y
-        self.loaded["z_coords"] = z
-
-        # Load optical distance arrays
-        op_distance_array, op_x_distance_array, op_y_distance_array, op_z_distance_array = self.load_op_distance_arrays(detector)
-
-        self.loaded["op_distance_array"] = op_distance_array
-        self.loaded["op_x_distance_array"] = op_x_distance_array
-        self.loaded["op_y_distance_array"] = op_y_distance_array
-        self.loaded["op_z_distance_array"] = op_z_distance_array
+        return merged_dict
 
     def get(self, *keys, default=None):
         # Get the value from the active config file if it exists, 
@@ -96,7 +94,7 @@ class Configurator:
                     raise KeyError(f"Configuration value {keys} not found in active or default config file")
         return value
     
-    def set_value(self, *keys, value):
+    def set_value(self, *keys, value=None):
         # Set a value in the active config file
         yaml_dict = self.yaml_dict
         default_yaml_dict = self.default_yaml_dict
@@ -119,12 +117,33 @@ class Configurator:
         # Just in case we have modified a relevant path, we reload the coordinates
         self.load_coodinates()
 
+    def load_coodinates(self):
+        # Load coordinate arrays
+        detector = self.get("Detector", "type")
+        x, y, z = self.load_coordinate_arrays(detector)
+
+        self.loaded["x_coords"] = x
+        self.loaded["y_coords"] = y
+        self.loaded["z_coords"] = z
+
+        # Load optical distance arrays
+        op_distance_array, op_x_distance_array, op_y_distance_array, op_z_distance_array = self.load_op_distance_arrays(detector)
+
+        self.loaded["op_distance_array"] = op_distance_array
+        self.loaded["op_x_distance_array"] = op_x_distance_array
+        self.loaded["op_y_distance_array"] = op_y_distance_array
+        self.loaded["op_z_distance_array"] = op_z_distance_array
+
     # TODO: make the file names configurable
     def load_coordinate_arrays(self, detector):
         if detector == "VD":
-            file = self.get("IO", "aux_coordinate_dir") + "pdpos_vd1x8x14v5.dat"
+            file = self.get("DataFormat", "aux_coordinate_dir") + "pdpos_vd1x8x14v5.dat"
         elif detector == "HD":
-            file = self.get("IO", "aux_coordinate_dir") + "pdpos_hd1x2x6.dat"
+            file = self.get("DataFormat", "aux_coordinate_dir") + "pdpos_hd1x2x6.dat"
+
+        # Make path absolute if it is not already
+        if not os.path.isabs(file):
+            file = os.path.join(os.path.dirname(os.path.abspath(__file__)), file)
 
         coords = np.genfromtxt(file, skip_header=1, skip_footer=2)
         self.log.info(f"Loaded detector coordinates from file: {file}")
@@ -137,8 +156,12 @@ class Configurator:
         return x, y, z
     
     def load_op_distance_arrays(self, detector):
-        file_dir = self.get("IO", "aux_data_dir")
+        file_dir = self.get("DataFormat", "aux_data_dir")
         geometry_version = self.get("Detector", "geometry_version")
+
+        # Make path absolute if it is not already
+        if not os.path.isabs(file_dir):
+            file_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), file_dir)
 
         # TODO: switch from pickle to text file, make function to create these accessible
         with open("{}/op_distance_array_{}_{}".format(file_dir, detector, geometry_version), "rb") as f:
@@ -151,22 +174,6 @@ class Configurator:
             op_z_distance_array = pickle.load(f)
 
         return op_distance_array, op_x_distance_array, op_y_distance_array, op_z_distance_array
-    
-    @staticmethod 
-    def parse_arguments():
-        parser = argparse.ArgumentParser()
-
-        # For now, only one argument (the configuration file path) is needed
-        # TODO: add the possibility to override configuration values from the command line
-        parser.add_argument("-c", "--config", type=str, help="Path to the configuration file")
-
-        args = parser.parse_args()
-
-        # Raise an error if no configuration file is provided
-        if not args.config:
-            parser.error("No configuration file provided")
-        
-        return args.config
         
 
 

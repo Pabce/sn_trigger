@@ -1,0 +1,18 @@
+DEFAULT_CONFIG_FILE: ../configs/default_config_vd.yaml
+
+Stages:
+  - load_events
+  - clustering
+  - cluster_feature_extraction
+
+Output:
+  stages_with_saved_output_data: last # "all", "last", None, or list of stages
+  output_data_file: ../pickle_outputs/cluster_features.pkl
+  output_info_file: ../info_outputs/cluster_features_info.dat
+
+Simulation:
+  # Stage load_events
+  load_events:
+    # Number of files to load for SN and BG
+    sn_file_limit: 14
+    bg_file_limit: 4

@@ -4,10 +4,15 @@ classifier.py
 Contains the functions that train and apply the BDT.
 '''
 
-import logging
 import warnings
-# Filter useless warnings
-warnings.filterwarnings("ignore", message="y_pred contains classes not in y_true")
+
+warnings.filterwarnings(
+    "ignore",
+    message=".*y_pred contains classes not in y_true.*",
+    category=UserWarning
+)
+
+import logging
 
 import gui
 from gui import console
@@ -18,9 +23,7 @@ import matplotlib.pyplot as plt
 import pickle
 import logging
 
-import sklearn
 from sklearn import tree
-# from sklearn.experimental import enable_hist_gradient_boosting
 from sklearn.experimental import enable_halving_search_cv
 from sklearn.metrics import zero_one_loss, confusion_matrix, balanced_accuracy_score, accuracy_score, roc_auc_score
 from sklearn.model_selection import train_test_split, HalvingRandomSearchCV
@@ -35,41 +38,16 @@ except ImportError:
 # TODO: make sklearn print like the rest of the code... (seems impossible)
 
 
-def useless_build_decision_tree(features, targets):
+# Given a classifier and a set of clusters, returns the clusters that are classified as SN by the classifier
+# with a probability greater than the threshold
+def cluster_filter(tree, clusters, features_array, threshold=0.5):
+    predictions_prob = tree.predict_proba(features_array)[:, 1]
 
-    train_features, test_features, train_targets, test_targets = train_test_split(features, targets,
-                                                                test_size=0.1, random_state=212)
-    
-    decision_tree = tree.DecisionTreeClassifier(max_depth=2, random_state=988).fit(train_features, train_targets)
+    filtered_indices = np.where(predictions_prob > threshold)[0]
+    filtered_clusters = [clusters[i] for i in filtered_indices]
+    filtered_features_array = features_array[filtered_indices, :]
 
-    # Bias calculation with 0-1 loss
-    predictions = decision_tree.predict(train_features)
-    predictions_test = decision_tree.predict(test_features)
-    print("0-1 loss: " + str(zero_one_loss(predictions, train_targets)))
-    print("0-1 loss TEST: " + str(zero_one_loss(predictions_test, test_targets)))
-
-    return decision_tree
-
-
-def tree_filter(tree, clusters, features, threshold=0.5):
-    predictions_prob = tree.predict_proba(features)[:, 1]
-
-    # print(features.shape, "features shape")
-    # print(len(clusters), "clusters")
-    
-    new_clusters = []
-    filter = []
-
-    #print("Clusters to filter", len(clusters))
-    for i, cluster in enumerate(clusters):
-        if predictions_prob[i] >= threshold:
-            new_clusters.append(cluster)
-            filter.append(i)
-    
-    new_features = features[filter, :]
-
-    # Also return the hit multp. for format reasons
-    return new_clusters, new_features[:, -1].astype('int'), predictions_prob
+    return filtered_clusters, filtered_features_array
 
 
 def gradient_boosted_tree(features, targets, n_estimators=200, max_depth=2, threshold_scan=False):
@@ -123,7 +101,13 @@ def gradient_boosted_tree(features, targets, n_estimators=200, max_depth=2, thre
     return boosted_tree, test_features, test_targets, train_features, train_targets
 
 
-def hist_gradient_boosted_tree(features, targets, n_estimators=200, optimize_hyperparameters=False):
+def hist_gradient_boosted_tree(features, targets, n_estimators=200, 
+                               optimize_hyperparameters=False, random_state=None,
+                               hyperparameters=None):
+    
+    if optimize_hyperparameters is True and hyperparameters is not None:
+        raise ValueError("Only one of optimize_hyperparameters and hyperparameters should be set")
+
     train_features, test_features, train_targets, test_targets =\
                     train_test_split(features, targets, test_size=0.1, shuffle=True, stratify=targets)
     
@@ -131,25 +115,31 @@ def hist_gradient_boosted_tree(features, targets, n_estimators=200, optimize_hyp
 
     # Optimize hyperparameters
     if optimize_hyperparameters:
+        # TODO: Re-include l2_regularization in the parameter grid?
         base_estimator = HistGradientBoostingClassifier()
         param_grid = {'learning_rate': loguniform(1e-4, 2e-1),
                     'max_iter': randint(50, 2000),
                     'max_leaf_nodes': randint(16, 64),
                     'min_samples_leaf': randint(5, 25),
                     'max_bins': randint(16, 255),
-                    'l2_regularization': loguniform(1e-10, 1e-1),
                     'class_weight': ['balanced'],
                     }
+                    # 'l2_regularization': loguniform(1e-10, 1e-1),
                     # 'class_weight': ['balanced', None],
-        
+
         search = HalvingRandomSearchCV(
             base_estimator, param_grid, cv=3, verbose=1, 
-            n_jobs=-1, scoring='balanced_accuracy'
+            n_jobs=-1, scoring='balanced_accuracy', random_state=random_state,
             ).fit(train_features, train_targets)
 
-        logging.info(f"Best parameters: {search.best_params_}")
+        logging.info(f"Best score: {search.best_score_}")
+        logging.info(f"Best parameters:")
+        logging.info(search.best_params_)
                   
         hist_boosted_tree = search.best_estimator_
+    elif hyperparameters is not None:
+        hist_boosted_tree = HistGradientBoostingClassifier(**hyperparameters
+            ).fit(train_features, train_targets)
     else:
         hist_boosted_tree = HistGradientBoostingClassifier(
             learning_rate=0.05, max_iter=n_estimators, class_weight='balanced'

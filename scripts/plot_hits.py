@@ -12,6 +12,28 @@ class HitPlotter:
         self.log.setLevel(logging_level)
 
 
+    def console_plot_timeline(self, cluster):
+        console.print(f"\tTime candidate cluster, size: {len(cluster)}")
+
+        first_hit_time = cluster[0][3]
+        # absolute_times = [hit[3] for hit in cluster]
+        # console.print(absolute_times)
+        times = [hit[3] - first_hit_time for hit in cluster]
+        start_time = 0
+        end_time = times[-1]
+        total_time = end_time - start_time if end_time > start_time else 1  # Prevent division by zero
+        
+        timeline_length = console.width - 20
+        timeline = [' '] * timeline_length
+        
+        for t in times:
+            pos = int((t - start_time) / total_time * (timeline_length - 1))
+            timeline[pos] = '●'  # Using a filled circle for each hit
+        
+        timeline_str = f"{start_time:.1f} |" + ''.join(timeline) + f"| {end_time:.4f}"
+        console.print(timeline_str)
+
+
     def plot_3d_clusters(self, cluster, space_clusters, plot_complement_cluster=False):
         # Config reads ----
         detector_type = self.config.get("Detector", "type")
@@ -71,12 +93,12 @@ class HitPlotter:
                 'hotpink', 'gray', 'cyan', 'magenta', 'yellow',
                 'brown', 'violet', 'purple', 'white', 'pink']
 
+        ax.set_title(f"Cluster sizes: {[sc.shape[0] for sc in space_clusters]} / Total: {cluster.shape[0]}")
         for i in range(len(space_clusters)):
             space_cluster = space_clusters[i]
             
             self.log.info(f"\t\tSpace cluster shape: {space_cluster.shape}")
 
-            ax.set_title(f"Cluster size: {space_cluster.shape[0]} / {cluster.shape[0]}")
 
             # Keep track of how many hits each opchannel has
             cluster_opchannels = cluster[:, 2].astype(int)
@@ -97,7 +119,7 @@ class HitPlotter:
             # cbar.set_ticklabels(range(1, 5))
             
             # size of the points should be proportional to the number of hits in each opchannel
-            size = 20 * opchannel_hits[space_cluster[:, 2].astype(int)]
+            size = 25 * opchannel_hits[space_cluster[:, 2].astype(int)]
             sx, sy, sz = space_cluster[:, 4], space_cluster[:, 5], space_cluster[:, 6]
             ax.scatter(sy, sz, sx, c=colors[i], alpha=1, s=size, zorder=10)
 

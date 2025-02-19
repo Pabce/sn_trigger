@@ -1,108 +1,159 @@
+# default_config_vd.yaml
 # Base configuration file for the trigger algorithm - VD
 
-DEFAULT_CONFIG_FILE: None
+DEFAULT_CONFIG_FILE: null
 
-IO:
-  sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_snnue_pds/
+Stages:
+  - load_events
+  - clustering
+  - cluster_feature_extraction
+  - bdt_training
+  - trigger_efficiency
+
+Input:
+  input_data_file: null # Overrideable by the command line
+
+Output:
+  verbosity: INFO # DEBUG, INFO, WARNING, ERROR
+  stages_with_saved_output_data: last # "all", "last", null (None), or list of stages
+  # Output file for the trigger output 
+  # (must be a single file if stages_with_saved_output is set to "last", else a dictionary with keys as stage names)
+  output_data_file: ../pickle_outputs/trigger_output_vd_default.pkl # Overrideable by the command line (only if stages_with_saved_output is set to "last")
+  output_info_file: ../info_outputs/trigger_info_vd_default.dat
+
+  error_behavior: kill # "graceful" or "kill"
+
+DataFormat:
+  # Format of the data to be loaded
   sn_event_number_per_file: 1000
-  sn_hit_file_start_pattern: 'prodmarley_nue_dune10kt_vd_1x8x14'
-  sn_hit_file_end_pattern: '_g4_detsim_{}_reco_hist.root'
-  sn_info_file_end_pattern: '_stana_hist.root'
-  photon_file_end_pattern: 'NOTHING'
 
-  bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_vd_background_juergen/
-  # Length of the background samples in ms
-  bg_sample_length: 8.5
   bg_sample_number_per_file: 20
-  bg_hit_file_start_pattern: 'prodbg_radiological_decay0_vd_dune10kt_1x8x14'
-  bg_hit_file_end_pattern: '_detsim_{}_reco_hist.root'
-
-  load_data_in_parallel: True
-
-  efficiency_save_dir: ../saved_effs/
-  pickle_save_dir: ../saved_pickles/
-
-  output_name_data: None
-  output_name_curve: None
-  input_name: None # Input for when calculating the efficiency curve
+  bg_sample_length: 8.5 # Length of the background samples in ms
 
   # Auxiliary pickles (and other stuff) and .dat for coordinates
-  # aux_coordinate_dir: /eos/home-p/pbarhama/myway/detector_coordinates/
-  # aux_data_dir: /eos/home-p/pbarhama/myway/aux_pickles/
   aux_coordinate_dir: ../aux_data/detector_coordinates/
   aux_data_dir: ../aux_data/
+
+
+Simulation:
+
+  # Stage load_events
+  load_events:
+    sim_mode: xe # 'xe' or 'aronly'
+    # Number of files to load for SN and BG
+    sn_file_limit: 140
+    bg_file_limit: 40
+
+    #sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_snnue_pds/
+    #sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_snnue_pds_cc_higheff/
+    #sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_snnue_pds_cc_lowadc/
+    #sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_snnue_pds_cc_highadc/
+    sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/feb25_vd_snnue_pds_es/
+    sn_hit_file_start_pattern: 'prodmarley_nue_dune10kt_vd_1x8x14'
+    sn_hit_file_end_pattern: '_g4_detsim_{}_reco_hist.root'
+    sn_info_file_end_pattern: '_stana_hist.root'
+    photon_file_end_pattern: 'NOTHING'
+
+    bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_vd_background_juergen/
+    #bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_background_juergen_higheff/
+    #bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_background_juergen_lowadc/
+    #bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_background_juergen_highadc/
+    bg_hit_file_start_pattern: 'prodbg_radiological_decay0_vd_dune10kt_1x8x14'
+    bg_hit_file_end_pattern: '_detsim_{}_reco_hist.root'
+
+    load_data_in_parallel: True
+    split_for_classifier: True
+    classifier_energy_limit: 30
+    train_split: 0.5
+  
+  # Stage clustering
+  clustering:
+    mode: single
+    parameters:
+      max_cluster_time: 0.25 # In microseconds
+      max_hit_time_diff: 0.2 # In microseconds
+      max_hit_distance: 350 # In cm
+      min_hit_multiplicity: 8
+      min_neighbours: 1
+  
+  # Stage cluster_feature_extraction
+  cluster_feature_extraction:
+    cluster_features: all # "all" or list of features
+
+  # Stage bdt_training
+  bdt_training:
+    optimize_hyperparameters: True
+    optimize_hyperparameters_random_state: 42 # Integer or None
+    threshold: 0.5 # Only used for hit_multiplicity type histogram
+    bdt_hyperparameters: null # null (None) or dictionary of hyperparameters. Chose either this or optimize_hyperparameters
+
+  # Stage trigger_efficiency
+  trigger_efficiency:
+    use_classifier: True
+    number_of_tests: 1000
+
+    fake_trigger_rate: 3.85802469e-7 # = 1/(60 * 60 * 24 * 30) -> 1 trigger per month
+    distance_to_evaluate: 30.0  # kpc
+    burst_time_window: 1.0e+6 # microseconds
+
+    physics:
+      # supernova_spectra:
+      #   spec_type: pinching
+      #   pinching_parameters:
+      #     average_energy: 23.0
+      #     alpha: 5.0
+      #   interaction_number_10kpc: 3295
+      
+      supernova_spectra:
+        spec_type: model_name
+        model_name: "GKVM"
+
+      # Spectrum or list of spectra to be used
+      # supernova_spectra:
+      #   - spec_type: model_name
+      #     model_name: "GKVM"
+      #   - spec_type: model_name
+      #     model_name: "Livermore"
+      #   - spec_type: model_name
+      #     model_name: "Garching"
+
+    statistical_info:
+      histogram_variable: bdt_output # hit_multiplicity, bdt_output (only valid if using BDT), naive_count
+      statistical_method: log_likelihood_ratio # pearson_chi_squared, cash, log_likelihood_ratio
+      histogram_bunch_threshold: 12.0 # THIS SHOULD BE VARIED BY VARIABLE/METHOD!
+      classifier_threshold: 0.5 # Will only be used if histogram_variable is hit_multiplicity and use_classifier is True
+      use_bg_variations: False # False or int (number of variations). This will generate variations of the BG histograms based of the fact that BG is estimated from finite MC samples.
+    
+    error_info:
+      type: bayesian # "bayesian" or "frequentist"
+      params:
+        prior: jeffreys # "jeffreys" or "uniform"
+        confidence_level: 0.68
+
 
 Detector:
   # Detector type: HD or VD
   type: VD
   geometry_version: v5 # this now does nothing
-  # Used volume in real-life TPCs
+  # Volume of the real-life TPC
   true_tpc_size: 10
-  # Used volume for the simulation geometries
+  # Used volume for the simulation geometry
   used_tpc_size: 2.6
-  # Correcting for the fact that TPCs are actually a bit bigger than 10kt
+  # Correction for the fact that TPCs are actually a bit bigger than 10kt
   tpc_size_correction_factor: 1.2
   # Correction for extra volume outside of the active volume (buffer region)
   sn_event_multiplier: 1.17
   # Number of optical channels
   optical_channel_number: 184
 
-Physics:
-  # Pinching parameters (neutrino flux)
-  # TODO: Ability to add an arbitrary flux
-  # GKVM 23 5
-  # LIVERMORE 14.4 2.8
-  # GARCHING 12.2 4.5 (OR 11.44 and 3.2)
-  neutrino_flux:
-    average_energy: 23.0
-    alpha: 5.0
 
-  # Interaction numbers for a 40kton LArTPC at 10 kpc
-  # Values of v_e-CC interactions at 10 kpc for a 40 kton LArTPC
-  interaction_number_10kpc:
-    LIVERMORE: 2684
-    GKVM: 3295
-    GARCHING: 882
-
-Simulation:
-  # Number of files to load (will be used for efficiency estimation once optimal parameters are found)
-  sn_file_limit: 10
-  bg_file_limit: 20
-  # Number of files to load for parameter search
-  sn_file_limit_parameter_search: 140
-  bg_file_limit_parameter_search: 40
-
-  # Clustering parameters over which to search for optimization
-  max_cluster_times: [0.15, 0.2] # In microseconds
-  max_hit_time_diff: [0.25, 0.20] # In microseconds
-  max_hit_distances: [200, 220] # In cm
-  lower_min_hit_multiplicity: 8 # Minimum number of hits in a cluster
-  upper_min_hit_multiplicity: 13
-  classifier_thresholds: [0.5, 0.7, 0.9]
-  classifier_hist_type: hit_multiplicity #"hit_multiplicity" or "bdt"
-  statistical_method: chi2 # TODO: add gaussian vs poissonian
-
-  # Distances over which to calculate the efficiency (if any)
-  eff_curve:
-    calculate: True
-    mode: from_scratch # from_scratch, from_data
-    distances:
-      min: 4
-      max: 40
-      step: 4
-
-  # Use BDT?
-  bdt:
-    use: True
-    energy_limit: 30
-    optimize_hyperparameters: True
-
-  # ----- Parameters below are less likely to be changed ----
-  fake_trigger_rate: 3.85802469e-7 # 1/(60 * 60 * 24 * 30) -> 1 trigger per month
-  burst_time_window: 1.0e+6 # microseconds
-  distance_to_optimize: 20.0 # kpc
-  sim_mode: xe # 'xe' or 'aronly'
-  adc_mode: normal # Useless at this point
+#GlobalParameters:
+  # Global simulation parameters that are used in different stages
+  # fake_trigger_rate: 3.85802469e-7 # = 1/(60 * 60 * 24 * 30) -> 1 trigger per month
+  # burst_time_window: 1.0e+6 # microseconds
+  # distance_to_evaluate: 25.0 # kpc
+  # sim_mode: xe # 'xe' or 'aronly'
+  
 
 Backgrounds:
   - Ar39GenInLAr

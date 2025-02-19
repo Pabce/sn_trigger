@@ -1,0 +1,9 @@
+DEFAULT_CONFIG_FILE: ../configs/default_config_vd.yaml
+
+Stages:
+  - bdt_training
+  - trigger_efficiency
+
+Output:
+  stages_with_saved_output_data: None # "all", "last", None, or list of stages
+  

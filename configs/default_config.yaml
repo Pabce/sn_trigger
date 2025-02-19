@@ -84,10 +84,9 @@ Simulation:
   # ----- Parameters below are less likely to be changed ----
   fake_trigger_rate: 3.85802469e-7 # 1/(60 * 60 * 24 * 30) -> 1 trigger per month
   burst_time_window: 1.0e+6 # microseconds
-  distance_to_optimize: 20.0 # kpc
+  distance_to_evaluate: 20.0 # kpc
   sim_mode: xe # 'xe' or 'aronly'
-  adc_mode: normal # Useless at this point
-
+  
 Backgrounds:
   VD:
     - Ar39GenInLAr

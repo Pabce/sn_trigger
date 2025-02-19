@@ -188,7 +188,7 @@ BG_FILE_LIMIT_SEARCH = 20
 # Algorithm parameters
 FAKE_TRIGGER_RATE = 1/(60 * 60 * 24 * 30) # 1 trigger per month
 BURST_TIME_WINDOW = 1e6 # In microseconds
-DISTANCE_TO_OPTIMIZE = 20.123 # In kpc 
+distance_to_evaluate = 20.123 # In kpc 
 SIM_MODE = 'xe' # 'xe' or 'aronly'
 ADC_MODE = 'normal' # 'low' or 'normal'
 # DETECTOR = 'VD' # 'VD' or 'HD' (THIS IS ALREADY DEFINED ABOVE)

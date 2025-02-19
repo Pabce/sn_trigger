@@ -1,0 +1,103 @@
+# default_config_vd.yaml
+# Base configuration file for the trigger algorithm - VD
+
+DEFAULT_CONFIG_FILE: ../configs/default_config_vd.yaml
+
+Stages:
+  - load_events
+
+Input:
+  input_data_file: null # Overrideable by the command line
+
+Output:
+  verbosity: INFO # DEBUG, INFO, WARNING, ERROR
+  stages_with_saved_output_data: null # "all", "last", null (None), or list of stages
+
+  error_behavior: kill # "graceful" or "kill"
+
+DataFormat:
+  # Format of the data to be loaded
+  sn_event_number_per_file: 1000
+
+  bg_sample_number_per_file: 20
+  bg_sample_length: 8.5 # Length of the background samples in ms
+
+  # Auxiliary pickles (and other stuff) and .dat for coordinates
+  aux_coordinate_dir: ../aux_data/detector_coordinates/
+  aux_data_dir: ../aux_data/
+
+
+Simulation:
+
+  # Stage load_events
+  load_events:
+    sim_mode: xe # 'xe' or 'aronly'
+    # Number of files to load for SN and BG
+    sn_file_limit: 140
+    bg_file_limit: 40
+
+    #sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_snnue_pds/
+    sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_snnue_pds_cc_higheff/
+    sn_hit_file_start_pattern: 'prodmarley_nue_dune10kt_vd_1x8x14'
+    sn_hit_file_end_pattern: '_g4_detsim_{}_reco_hist.root'
+    sn_info_file_end_pattern: '_stana_hist.root'
+    photon_file_end_pattern: 'NOTHING'
+
+    #bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_vd_background_juergen/
+    bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_background_juergen_higheff/
+    bg_hit_file_start_pattern: 'prodbg_radiological_decay0_vd_dune10kt_1x8x14'
+    bg_hit_file_end_pattern: '_detsim_{}_reco_hist.root'
+
+    load_data_in_parallel: True
+    split_for_classifier: True
+    classifier_energy_limit: 30
+    train_split: 0.5
+  
+
+
+Detector:
+  # Detector type: HD or VD
+  type: VD
+  geometry_version: v5 # this now does nothing
+  # Volume of the real-life TPC
+  true_tpc_size: 10
+  # Used volume for the simulation geometry
+  used_tpc_size: 2.6
+  # Correction for the fact that TPCs are actually a bit bigger than 10kt
+  tpc_size_correction_factor: 1.2
+  # Correction for extra volume outside of the active volume (buffer region)
+  sn_event_multiplier: 1.17
+  # Number of optical channels
+  optical_channel_number: 184
+  
+
+Backgrounds:
+  - Ar39GenInLAr
+  - Kr85GenInLAr
+  - Ar42GenInLAr
+  - K42From42ArGenInLAr
+  - Rn222ChainRn222GenInLAr
+  - Rn222ChainPo218GenInLAr
+  - Rn222ChainPb214GenInLAr
+  - Rn222ChainBi214GenInLAr
+  - Rn222ChainPb210GenInLAr
+  - Rn220ChainPb212GenInLAr
+  - K40GenInCathode
+  - U238ChainGenInCathode
+  - Th232ChainGenInCathode
+  - K40GenInAnode
+  - U238ChainGenInAnode
+  - Th232ChainGenInAnode
+  - Rn222ChainGenInPDS
+  - K42From42ArGenInUpperMesh1x8x14
+  - Rn222ChainFromPo218GenInUpperMesh1x8x14
+  - Rn222ChainFromPb214GenInUpperMesh1x8x14
+  - Rn222ChainFromBi214GenInUpperMesh1x8x14
+  - Rn222ChainFromPb210GenInUpperMesh1x8x14
+  - Rn222ChainFromBi210GenInUpperMesh1x8x14
+  - Rn220ChainFromPb212GenInUpperMesh1x8x14
+  - CavernwallGammasAtLAr1x8x14
+  - foamGammasAtLAr1x8x14
+  - CavernwallNeutronsAtLAr1x8x14
+  - CryostatNGammasAtLAr1x8x14
+  - CavernNGammasAtLAr1x8x14

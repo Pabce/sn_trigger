@@ -1,0 +1,14 @@
+DEFAULT_CONFIG_FILE: ../configs/default_config_vd.yaml
+
+Stages:
+  - clustering
+  - cluster_feature_extraction
+  - bdt_training
+
+Input:
+  input_data_file: ../pickle_outputs/hit_data.pkl
+
+Output:
+  stages_with_saved_output_data: last # "all", "last", None, or list of stages
+  # Output file for the trigger output (must be a single file if stages_with_saved_output is set to "last", else a dictionary with keys as stage names)
+  output_data_file: ../pickle_outputs/bdt_training_output.pkl # Overrideable by the command line (only if stages_with_saved_output is set to "last")

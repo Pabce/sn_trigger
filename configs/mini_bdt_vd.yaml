@@ -1,0 +1,15 @@
+DEFAULT_CONFIG_FILE: ../configs/default_config_vd.yaml
+
+Output:
+  verbosity: INFO # DEBUG, INFO, WARNING, ERROR
+  stages_with_saved_output_data: last # "all", "last", None, or list of stages
+  # Output file for the trigger output 
+  # (must be a single file if stages_with_saved_output is set to "last", else a dictionary with keys as stage names)
+  output_data_file: ../pickle_outputs/mini_bdt_trigger_output.pkl # Overrideable by the command line (only if stages_with_saved_output is set to "last")
+  output_info_file: ../info_outputs/mini_bdt_trigger_info.dat
+
+Simulation:
+  
+  # Stage cluster_feature_extraction
+  cluster_feature_extraction:
+    cluster_features: ['num_hits_most_populated_opchannel', 'num_active_opchannels', 'wall_hit_fraction', 'max_z_diff']

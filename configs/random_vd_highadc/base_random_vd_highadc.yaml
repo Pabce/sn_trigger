@@ -1,0 +1,61 @@
+# Some configuration for the trigger algorithm
+
+# Default config file. 
+# The values not explicitly declared in this file will be pulled from this config.
+DEFAULT_CONFIG_FILE: ../configs/default_config_vd.yaml
+
+Output:
+  stages_with_saved_output_data: None # "all", "last", None, or list of stages
+  # Output file for the trigger output (must be a single file if stages_with_saved_output is set to "last", else a dictionary with keys as stage names)
+  output_data_file: None # Overrideable by the command line (only if stages_with_saved_output is set to "last")
+  # output_info_file: **output_info_file**
+  error_behavior: graceful # "graceful" or "kill"
+
+Simulation:
+  # Stage load_events
+  load_events:
+    # Number of files to load for SN and BG
+    sn_file_limit: 140
+    bg_file_limit: 40
+
+    sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_snnue_pds_cc_highadc/
+    bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_background_juergen_highadc/
+
+
+  # Stage trigger_efficiency
+  trigger_efficiency:
+    use_classifier: True
+    number_of_tests: 1000
+
+    fake_trigger_rate: 3.85802469e-7 # = 1/(60 * 60 * 24 * 30) -> 1 trigger per month
+    distance_to_evaluate: [10.0, 15.0, 25.0, 30.0]  # kpc
+    burst_time_window: 1.0e+6 # microseconds
+
+    physics:
+      # Spectrum or list of spectra to be used
+      supernova_spectra:
+        - spec_type: model_name
+          model_name: "GKVM"
+        - spec_type: model_name
+          model_name: "Livermore"
+        - spec_type: model_name
+          model_name: "Garching"
+          
+    
+  # Stage clustering
+  clustering:
+    mode: single
+    parameters:
+      max_cluster_time: **max_cluster_time** # In microseconds
+      max_hit_time_diff: **max_hit_time_diff** # In microseconds
+      max_hit_distance: **max_hit_distance** # In cm
+      min_hit_multiplicity: **min_hit_multiplicity**
+      min_neighbours: **min_neighbours**
+  
+  # Stage bdt_training
+  bdt_training:
+    optimize_hyperparameters: True # True or False
+    optimize_hyperparameters_random_state: 42 # Integer or None
+    threshold: 0.5 # Only used for hit_multiplicity type histogram
+    bdt_hyperparameters: null # null (None) or dictionary of hyperparameters. Chose either this or optimize_hyperparameters
+

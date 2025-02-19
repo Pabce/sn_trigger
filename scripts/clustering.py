@@ -21,9 +21,9 @@ class Clustering:
         self.log.setLevel(logging_level)
     
 
-    def group_clustering(self, hit_list_per_event, max_cluster_time, max_hit_time_diff, max_hit_distance, 
-                        max_x_hit_distance, max_y_hit_distance, max_z_hit_distance, min_neighbours, 
-                        min_hit_multiplicity, spatial_filter=True, data_type_str="Chipmonc", in_parallel=False):
+    def group_clustering(self, hit_list_per_event, max_cluster_time, max_hit_time_diff, max_hit_distance, min_neighbours, 
+                        min_hit_multiplicity, spatial_filter=True, data_type_str="Chipmonc", in_parallel=False,
+                        max_x_hit_distance=1e5, max_y_hit_distance=1e5, max_z_hit_distance=1e5):
 
         final_clusters = []
         final_clusters_per_event = []
@@ -58,7 +58,7 @@ class Clustering:
                     # Unfortunately, imap_unordered is incredibly slower than map. So we use map in chunks to retain 
                     # some progress bar updates (we loose a tiny bit of performance by chunking, but it's fine)
                     chunk_size = int(0.05 * len(hit_list_per_event))
-                    chunk_size = chunk_size if chunk_size > num_processes else num_processes
+                    chunk_size = max(chunk_size, num_processes)
                     chunks = [hit_list_per_event[i:i+chunk_size] for i in range(0, len(hit_list_per_event), chunk_size)]
 
                     for i, chunk in enumerate(chunks):
@@ -80,13 +80,12 @@ class Clustering:
                     final_hit_multiplicities.extend(hit_multiplicities_i)
 
                 final_clusters_per_event.append(clusters_i)
-                final_hit_multiplicities_per_event.append([-1])
+                final_hit_multiplicities_per_event.append(hit_multiplicities_i)
 
             # Create a new group with just the progress bar
             group = Group(progress)
             live.update(group)
         
-
 
         return final_clusters, final_clusters_per_event, final_hit_multiplicities, final_hit_multiplicities_per_event
         
@@ -135,7 +134,10 @@ class Clustering:
         hit_num = len(hits)
         self.log.debug(f"Number of hits: {hit_num}")
 
-        # TODO: Check that the hits are sorted by time and raise an error if not
+        # TODO: Fix this
+        # Check that the hits are sorted by time and raise an error if not
+        # if not np.all(np.diff(hits[:, 3]) >= 0):
+        #     raise ValueError("Hits are not sorted by time")
 
         pre_candidate_clusters = []
 
@@ -194,29 +196,8 @@ class Clustering:
         for cluster in pre_candidate_clusters:
             if cluster.shape[0] < min_hit_multiplicity:
                 #self.log.debug(f"\tCluster too small after max_hit_time_dif filter, size: {len(cluster)}")
-                pass
+                continue
             else:
-                # TODO: Move this into gui.py
-                # self.log.debug(f"\tTime candidate cluster, size: {len(cluster)}")
-                # Start Generation Here
-                # first_hit_time = cluster[0][3]
-                # # absolute_times = [hit[3] for hit in cluster]
-                # # console.print(absolute_times)
-                # times = [hit[3] - first_hit_time for hit in cluster]
-                # start_time = 0
-                # end_time = times[-1]
-                # total_time = end_time - start_time if end_time > start_time else 1  # Prevent division by zero
-                
-                # timeline_length = console.width - 20
-                # timeline = [' '] * timeline_length
-                
-                # for t in times:
-                #     pos = int((t - start_time) / total_time * (timeline_length - 1))
-                #     timeline[pos] = '●'  # Using a filled circle for each hit
-                
-                # timeline_str = f"{start_time:.1f} |" + ''.join(timeline) + f"| {end_time:.4f}"
-                # console.print(timeline_str)
-
                 candidate_clusters.append(cluster)
                 candidate_hit_multiplicities.append(cluster.shape[0])
         
@@ -242,7 +223,7 @@ class Clustering:
         opchannels = cluster[:, 2].astype(int)
 
         unsearched_indices = list(np.arange(cluster.shape[0]))
-        console.log(f"Length of cluster: {len(unsearched_indices)}")
+        self.log.debug(f"Length of cluster: {len(unsearched_indices)}")
         neighbour_index_groups = []
     
         while len(unsearched_indices) > 0:
@@ -286,8 +267,8 @@ class Clustering:
             #     neighbour_index_groups.append(neighbour_indices)
             neighbour_index_groups.append(neighbour_indices)
         
-        console.log(neighbour_index_groups)
-        console.log(f"Length of neighbour index groups: {len(neighbour_index_groups)}")
+        self.log.debug(neighbour_index_groups)
+        self.log.debug(f"Length of neighbour index groups: {len(neighbour_index_groups)}")
 
         # Build the candidate clusters from the neighbour index groups
         for group in neighbour_index_groups:
@@ -365,6 +346,8 @@ class Clustering:
 
         return candidate_cluster
 
+
+# TODO: Maybe the next two functions should be in a separate file/class?
 
 def compute_cluster_features(cluster, detector_type="VD", features_to_return="all"):
     # Number of features each hit in the cluster has
@@ -471,22 +454,51 @@ def compute_cluster_features(cluster, detector_type="VD", features_to_return="al
     return features
 
 
-def group_compute_cluster_features(clusters, detector_type="VD", data_type_str="Chipmonc", features_to_return="all"):
+def group_compute_cluster_features(clusters, detector_type="VD", per_event=False,
+                                   data_type_str="Chipmonc", features_to_return="all"):
     features_list = []
+    features_list_per_event = []
+
+    # If we have no clusters or no events, raise an error
+    if len(clusters) == 0:
+        raise ValueError("No clusters/events provided")
+
+    if not per_event:
+        cluster_list_per_event = [clusters]
+    else:
+        cluster_list_per_event = clusters
+
+    total_number_of_clusters = np.sum([len(cluster_list) for cluster_list in cluster_list_per_event])
+    feature_names = None
 
     status_fstring = f"[bold green]Computing features for {data_type_str} clusters"
     with gui.live_progress(console=console, status_fstring=status_fstring) as (progress, live, group):  
-        task = progress.add_task(f'[cyan]Computing features for {len(clusters)} {data_type_str} clusters', total=len(clusters))
-        for cluster in clusters:
-            features_list.append(compute_cluster_features(cluster, detector_type, features_to_return))
-            progress.update(task, advance=1)
+        task = progress.add_task(f'[cyan]Computing features for {total_number_of_clusters} {data_type_str} clusters',
+                                 total=total_number_of_clusters)
+
+        for cluster_list in cluster_list_per_event:
+            features_list_i = []
+            for cluster in cluster_list:
+                features_list_i.append(compute_cluster_features(cluster, detector_type, features_to_return))
+                progress.update(task, advance=1)
+
+            # Get the feature names (only once)
+            if feature_names is None and len(features_list_i) > 0:
+                feature_names = list(features_list_i[0].keys())
+
+            if len(features_list_i) == 0:
+                features_array_i = np.array([])
+            else:
+                features_array_i = np.array([[features[feature] for feature in feature_names] for features in features_list_i])
+            
+            features_list.extend(features_list_i)
+            features_list_per_event.append(features_array_i)
     
         # Create a new group with just the progress bar
         group = Group(progress)
         live.update(group)
 
     # Convert list of dicts to a numpy array
-    feature_names = list(features_list[0].keys())
     features_array = np.array([[features[feature] for feature in feature_names] for features in features_list])
 
-    return features_array, feature_names
+    return features_array, features_list_per_event, feature_names

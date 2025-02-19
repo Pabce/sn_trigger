@@ -1,0 +1,63 @@
+
+DEFAULT_CONFIG_FILE: ../configs/default_config_vd.yaml
+
+Stages:
+  - trigger_efficiency
+
+Input:
+  input_data_file: None # Overrideable by the command line
+
+Output:
+  verbosity: INFO # DEBUG, INFO, WARNING, ERROR
+  stages_with_saved_output_data: null # "all", "last", null (None), or list of stages
+  # Output file for the trigger output 
+  # (must be a single file if stages_with_saved_output is set to "last", else a dictionary with keys as stage names)
+  output_data_file: ../pickle_outputs/only_trigger_output.pkl # Overrideable by the command line (only if stages_with_saved_output is set to "last")
+  output_info_file: ../info_outputs/only_trigger_info.dat
+
+  error_behavior: "kill" # "graceful" or "kill"
+
+Simulation:
+
+  # Stage trigger_efficiency
+  trigger_efficiency:
+    use_classifier: True 
+    number_of_tests: 500
+
+    fake_trigger_rate: 3.85802469e-7 # = 1/(60 * 60 * 24 * 30) Hz -> 1 trigger per month
+    distance_to_evaluate: 30.0  # kpc
+    burst_time_window: 600.0e+3 #1.0e+6 # microseconds
+
+    physics:
+      # supernova_spectra:
+      #   spec_type: pinching
+      #   pinching_parameters:
+      #     average_energy: 23.0
+      #     alpha: 5.0
+      #   interaction_number_10kpc: 3295
+      
+      supernova_spectra:
+        spec_type: model_name
+        model_name: "GKVM"
+
+      # Spectrum or list of spectra to be used
+      # supernova_spectra:
+      #   - spec_type: model_name
+      #     model_name: "GKVM"
+      #   - spec_type: model_name
+      #     model_name: "Livermore"
+      #   - spec_type: model_name
+      #     model_name: "Garching"
+
+    statistical_info:
+      histogram_variable: bdt_output # hit_multiplicity, bdt_output (only valid if using BDT), naive_count
+      statistical_method: log_likelihood_ratio # pearson_chi_squared, cash, log_likelihood_ratio
+      histogram_bunch_threshold: 12.0 # THIS SHOULD BE VARIED BY VARIABLE/METHOD!
+      classifier_threshold: 0.5 # Will only be used if histogram_variable is hit_multiplicity and use_classifier is True
+      use_bg_variations: False # False or int (number of variations). This will generate variations of the BG histograms based of the fact that BG is estimated from finite MC samples.
+
+    error_info:
+      type: bayesian # "bayesian" or "frequentist"
+      params:
+        prior: jeffreys # "jeffreys" or "flat"
+        confidence_level: 0.68

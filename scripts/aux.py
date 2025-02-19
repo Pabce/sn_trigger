@@ -4,7 +4,8 @@ aux.py
 Bunch of auxiliary functions used in the rest of modules
 '''
 
-
+import logging
+from gui import console
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -150,59 +151,48 @@ def poisson_likelihood(observed, expected):
     return -sum_log_likelihood
 
 
-def bunch_histogram(hist_to_bunch, hbins, limit=4, bunched_indices=None, back_to_front=True):
-    # We can bunch "back to front". I believe in this way we better harness the high hit multiplicity of the SN events
+# Take a histogram and "bunch it" at the far end so all entries are above a certain limit
+# This is a simplified version of the original algorithm, but works always 
+def bunch_histogram(hist_to_bunch, hbins, limit=4, bunching_index=None):
 
     hist = deepcopy(hist_to_bunch)
 
-    if not back_to_front:
-        pass
+    # New empty histogram
+    new_hist = []
+    new_bins = []
+
+    if bunching_index is None:
+        # Find first index where the histogram entry is smaller than the limit
+        # This is the "bunching index"
+        try:
+            bunching_index = np.where(hist < limit)[0][0]
+            #console.log(f"Bunching index: {bunching_index}")
+            #console.log(hist)
+            # console.log(len(hist)-1)
+        # If no index is found, we don't bunch
+        except IndexError:
+            return hist, hbins, None
+
+    if bunching_index > len(hist) - 1:
+        raise ValueError(f"Bunching index {bunching_index} is out of bounds for the provided histogram of length {len(hist)}")
     
+    # Is the bunching index the last entry?
+    # In such case, we need to sum the last two entries
+    if bunching_index == len(hist) - 1:
+        new_entry = hist[-1] + hist[-2]
     else:
-        # New empty histogram
-        new_hist = []
-        new_bins = []
+        # Sum all entries from this index to the end
+        new_entry = np.sum(hist[bunching_index:])
+    #console.log(f"New entry: {new_entry}")
+    new_hist = np.concatenate((hist[:bunching_index], [new_entry]))
+    new_bins = np.concatenate((hbins[:bunching_index], hbins[bunching_index : bunching_index + 2]))
 
-        if bunched_indices is None:
-            bunched_indices = []
-            place = len(hist) - 1
+    # Has this produced a histogram where all entries are above the limit?
+    # If not, we bunch again!
+    if new_hist[-1] < limit:
+        return bunch_histogram(new_hist, new_bins, limit, bunching_index=None)
 
-            while place >= 0:
-                cumul = 0
-                prov_bunched_indices = []
-
-                for i in range(place, -1, -1):
-                    cumul += hist[i]
-                    prov_bunched_indices.append(i)
-
-                    if cumul >= limit:
-                        new_hist.append(cumul)
-                        bunched_indices.append(prov_bunched_indices)
-                        place = i - 1
-                        cumul = 0
-                        break
-                    elif i == 0:
-                        place = -1
-                        new_hist.append(cumul)
-                        bunched_indices.append(prov_bunched_indices)
-        else:
-            for ind_list in bunched_indices:
-                new_hist.append(np.sum(hist[ind_list]))
-
-    # Convert to np array and reverse
-    bunched = np.array(new_hist)[::-1]
-
-    # Same for bins, and append the last bin
-    for ind_list in bunched_indices[::-1]:
-        #print(ind_list)
-        new_bins.append(hbins[ind_list[-1]])
-    new_bins.append(hbins[-1])
-    bunched_bins = np.array(new_bins)
-
-    # print(hbins)
-    # print(bunched_bins)
-
-    return bunched, bunched_indices, bunched_bins
+    return new_hist, new_bins, bunching_index
 
 
 def get_acceptable_likelihood(expected_bg_hist, fake_trigger_rate):
@@ -264,29 +254,35 @@ def pinched_spectrum(energies, average_e, alpha):
 
 
 # Get indices for events that follow a particular energy distribution
-def get_energy_indices(energies, energy_histo, sn_energies, size):
+def sample_indices_by_energy(energy_histo, energy_bins, sn_energies, size):
+    if size == 0:
+        return np.array([])
     # Energy histogram should be normalized to 1
-    
+
     cdf = np.cumsum(energy_histo)
     cdf /= cdf[-1]
+    # Append a 0 to the cdf at the left
+    cdf = np.insert(cdf, 0, 0.)
 
     rng = np.random.rand(size)
     cdf_indices = np.searchsorted(cdf, rng)
 
-
     event_indices = []
     for i, cdf_index in enumerate(cdf_indices):
-        left_energy = energies[cdf_index - 1]
-        right_energy = energies[cdf_index]
+        left_energy = energy_bins[cdf_index - 1]
+        right_energy = energy_bins[cdf_index]
 
         # Get event indices with energy between left and right energy
         #indices = [i for i, e in enumerate(sn_energies) if e >= left_energy and e < right_energy]
         indices = np.where((sn_energies >= left_energy) & (sn_energies < right_energy))[0]
 
-
-        # FIXME
         if len(indices) == 0:
-            indices = [0]
+            console.log(cdf[0])
+            console.log(cdf_indices[i], rng[i])
+            raise ValueError(f"No indices found for the given energy range. "
+                             + f"Left: {left_energy}, Right: {right_energy}. "
+                             + f"Try loading more SN events or making the energy histogram bins wider.")
+            #indices = [0]
 
         index = np.random.choice(indices)
         event_indices.append(index)
@@ -296,12 +292,12 @@ def get_energy_indices(energies, energy_histo, sn_energies, size):
     return np.array(event_indices)
 
 
-def event_number_per_time(time_profile_x, time_profile_y, total_event_number, burst_time_window):
+def expected_event_number_in_time_window(time_profile_x, time_profile_y, total_event_number, burst_time_window):
     if burst_time_window == 0:
         return 0
     # We integrate the time profile in (0, time_window)
     # TIME PROFILE IS IN MS!
-    spacing = time_profile_x[1] - time_profile_x[0]
+    spacing = np.diff(time_profile_x)
     
     #total_integral = np.sum(time_profile_y) * spacing/1000 * 10 # From ms to s, times 9.9 seconds duration
     # The total integral is normalized to 1 so no need for ratios
@@ -312,14 +308,14 @@ def event_number_per_time(time_profile_x, time_profile_y, total_event_number, bu
     b_index = 0
     interp = 0
     for i, t in enumerate(time_profile_x):
-        if t > ms_burst_time_window:
+        if t >= ms_burst_time_window:
             b_index = i
-            interp = (ms_burst_time_window - time_profile_x[i - 1]) / spacing
+            interp = (ms_burst_time_window - time_profile_x[i - 1]) / spacing[i - 1]
             break
 
     # Do some interpolation
-    int_1 = np.sum(time_profile_y[0: b_index - 1]) * spacing/1000 * 10
-    int_2 = np.sum(time_profile_y[b_index - 1: b_index]) * spacing/1000 * 10
+    int_1 = np.sum(time_profile_y[0: b_index - 1])
+    int_2 = time_profile_y[b_index - 1]
     window_integral = int_1 + interp * int_2
 
     event_number = window_integral * total_event_number
