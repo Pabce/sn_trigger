@@ -65,28 +65,31 @@ class BDTAnalysis:
 
     def plot_roc_curve(self):
         # False positive rate, true positive rate, thresholds
-        plt.figure()
+        fig, ax = plt.subplots(figsize=(8, 5))
 
         for tree, features, targets in zip(self.trees, self.features, self.targets):
             fpr, tpr, thresholds = roc_curve(targets, tree.predict_proba(features)[:,1])
             # Area under the curve
             roc_auc = auc(fpr, tpr)
 
-            plt.plot(fpr, tpr, lw=2, label='ROC curve (area = {:.3f})'.format(roc_auc))
+            ax.plot(fpr, tpr, lw=2, label='ROC curve (area = {:.3f})'.format(roc_auc))
             
-        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title('ROC')
-        plt.legend(loc="lower right")
+        ax.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        ax.set_xlim([0.0, 1.0])
+        ax.set_ylim([0.0, 1.05])
+        ax.set_xlabel('False Positive Rate')
+        ax.set_ylabel('True Positive Rate')
+        ax.set_title('ROC')
+        ax.legend(loc="lower right")
+        fig.tight_layout()
         plt.show()
+
+        return fig, ax
     
     def plot_efficiency_vs_threshold(self):
         plot_styles = ["-", "--", "-.", ":"]
         
-        plt.figure()
+        fig, ax = plt.subplots(figsize=(8, 5))
 
         for i, (tree, features, targets, tree_name) in enumerate(zip(self.trees, self.features, self.targets, self.tree_names)):
             # False positive rate, true positive rate, thresholds
@@ -99,18 +102,20 @@ class BDTAnalysis:
             threshold = thresholds
 
             #console.log(f"Threshold: {threshold}")
-            plt.plot(threshold, sn_efficiency, label=f"SN efficiency, {tree_name}", color='red', linestyle=plot_styles[i])
-            plt.plot(threshold, bg_efficiency, label=f"BG efficiency, {tree_name}", color='blue', linestyle=plot_styles[i])
+            ax.plot(threshold, sn_efficiency, label=f"SN efficiency, {tree_name}", color='red', linestyle=plot_styles[i])
+            ax.plot(threshold, bg_efficiency, label=f"BG efficiency, {tree_name}", color='blue', linestyle=plot_styles[i])
 
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
-        plt.xlabel("Threshold")
-        plt.ylabel("Efficiency")
-        plt.legend()
+        ax.set_xlim([0.0, 1.0])
+        ax.set_ylim([0.0, 1.05])
+        ax.set_xlabel("Threshold")
+        ax.set_ylabel("Efficiency")
+        ax.legend()
+        fig.tight_layout()
         plt.show()
+        return fig, ax
     
-    def plot_score_histograms(self):
-
+    def plot_score_histograms(self, colors=None):
+        figs_axes = []
         for tree, features, targets, tree_name, feature_names in zip(self.trees, self.features, self.targets, self.tree_names, self.feature_names_list):
             predictions_prob = tree.predict_proba(features)[:,1]
 
@@ -121,14 +126,37 @@ class BDTAnalysis:
             sn_hit_multiplicities = features[:, 0][targets == 1].astype('int')
             
             # Plot the BDT score histograms
-            plt.figure()
-            plt.hist(bg_predictions_prob, bins=np.arange(0, 1, 0.04), alpha=0.8, density=True, label="BG")
-            plt.hist(sn_predictions_prob, bins=np.arange(0, 1, 0.04), alpha=0.5, density=True, label="Signal")
-            plt.xlabel("Score")
-            plt.ylabel("Density")
-            plt.yscale("log")
-            plt.title(f"BDT score histogram for {tree_name}")
-            plt.legend()
+            fig10, ax10 = plt.subplots()
+            ax10.hist(bg_predictions_prob, bins=np.arange(0, 1, 0.04), alpha=0.8, density=True, label="BG")
+            ax10.hist(sn_predictions_prob, bins=np.arange(0, 1, 0.04), alpha=0.5, density=True, label="Signal")
+            ax10.set_xlabel("Score")
+            ax10.set_ylabel("Density")
+            ax10.set_yscale("log")
+            #ax1.set_title(f"BDT score histogram for {tree_name}")
+            ax10.legend()
+            fig10.tight_layout()
+            figs_axes.append((fig10, ax10))
+
+            # Now plot the bg and sn predictions separately
+            if colors is None:
+                colors = ["red", "blue"]
+            fig11, ax11 = plt.subplots()
+            ax11.hist(bg_predictions_prob, bins=np.arange(0, 1, 0.04), alpha=1.0, 
+                      density=True, color=colors[0])
+            ax11.set_xlabel("Score")
+            ax11.set_ylabel("Density")
+            ax11.set_yscale("log")
+            fig11.tight_layout()
+            figs_axes.append((fig11, ax11))
+
+            fig12, ax12 = plt.subplots()
+            ax12.hist(sn_predictions_prob, bins=np.arange(0, 1, 0.04), alpha=1.0, 
+                      density=True, color=colors[1])
+            ax12.set_xlabel("Score")
+            ax12.set_ylabel("Density")
+            ax12.set_yscale("log")
+            fig12.tight_layout()
+            figs_axes.append((fig12, ax12))
 
             # Plot the hit multiplicity histograms
             if 'hit_multiplicity' in feature_names:
@@ -136,17 +164,21 @@ class BDTAnalysis:
                 max_hit_multiplicity = np.max(np.concatenate((bg_hit_multiplicities, sn_hit_multiplicities)))
                 min_hit_multiplicity = np.min(np.concatenate((bg_hit_multiplicities, sn_hit_multiplicities)))
 
-                plt.figure()
-                plt.hist(bg_hit_multiplicities, bins=np.arange(min_hit_multiplicity, max_hit_multiplicity + 1, 1), alpha=0.8, density=True, label="BG")
-                plt.hist(sn_hit_multiplicities, bins=np.arange(min_hit_multiplicity, max_hit_multiplicity + 1, 1), alpha=0.5, density=True, label="Signal")
-                plt.xlabel("Hit Multiplicity")
-                plt.ylabel("Density")
-                plt.title(f"Hit multiplicity for {tree_name}")
-                plt.legend()
+                fig2, ax2 = plt.subplots()
+                ax2.hist(bg_hit_multiplicities, bins=np.arange(min_hit_multiplicity, max_hit_multiplicity + 1, 1), alpha=0.8, density=True, label="BG")
+                ax2.hist(sn_hit_multiplicities, bins=np.arange(min_hit_multiplicity, max_hit_multiplicity + 1, 1), alpha=0.5, density=True, label="Signal")
+                ax2.set_xlabel("Hit Multiplicity")
+                ax2.set_ylabel("Density")
+                ax2.set_title(f"Hit multiplicity for {tree_name}")
+                ax2.legend()
+                fig2.tight_layout()
+                figs_axes.append((fig2, ax2))
         
         plt.show()
-    
+        return figs_axes
+
     def plot_permutation_importance(self):
+        figs_axes = []
         # Plot the permutation importance
         for tree, features, targets, tree_name, feature_names in zip(self.trees, self.features, self.targets, self.tree_names, self.feature_names_list):
             perm_importances = inspection.permutation_importance(tree, features[:], targets[:], n_repeats=20)
@@ -157,45 +189,96 @@ class BDTAnalysis:
             sort_labels = np.array(feature_names)[np.argsort(perm_importances.importances_mean)]
             sort_importance = np.sort(perm_importances.importances_mean)
             
-            plt.figure()
-            plt.barh(sort_labels, sort_importance)
-            plt.xlabel(f"Permutation importance for {tree_name}")
+            fig, ax = plt.subplots()
+            ax.barh(sort_labels, sort_importance)
+            ax.set_xlabel(f"Permutation importance for {tree_name}")
+            ax.set_title(f"Permutation importance for {tree_name}")
             plt.xticks(rotation=90)
-            plt.tight_layout()
+            fig.tight_layout()
+            figs_axes.append((fig, ax))
 
         plt.show()
-    
-    def plot_shapley_summary(self):
+        return figs_axes
+
+    def plot_shapley_summary(self, approx=False, n_features=10, tick_font_size=12):
+        figs_axes = []
         for tree, features, targets, tree_name, feature_names in zip(self.trees, self.features, self.targets, self.tree_names, self.feature_names_list):
             # Shuffle the features and targets just in case
             p = np.random.permutation(len(features))
             features = features[p]
             targets = targets[p]
-
-            explainer = shap.TreeExplainer(tree, feature_names=feature_names)
+ 
+            explainer = shap.TreeExplainer(tree, approximate=approx, feature_names=feature_names)
             shap_values = explainer(features)
 
             # Plot the SHAP summary plot
-            plt.figure()
-            shap.summary_plot(shap_values, features)
-            plt.tight_layout()
+            shap.summary_plot(
+                shap_values,
+                features,
+                show=False,
+                max_display=n_features,
+                feature_names=feature_names,
+                plot_size=(10, 6)
+            )
+
+            # The figure/axes are now the current ones in matplotlib.
+            fig1 = plt.gcf()
+
+            # The summary plot axis is the one that owns the x-label produced by
+            # SHAP ("SHAP value (impact on model output)").  Locate it to be
+            # robust against the additional color-bar axis.
+            summary_axes = [ax for ax in fig1.axes if ax.get_xlabel() != ""]
+
+            if len(summary_axes):
+                summary_ax = summary_axes[0]
+            else:
+                # Fallback: assume first axis.
+                summary_ax = fig1.axes[0]
+
+            # Iterate over *all* axes (main axis + colour-bar) to guarantee
+            # uniform font sizing.
+            for ax in fig1.axes:
+                ax.tick_params(axis="both", which="both", labelsize=tick_font_size)
+
+                for lbl in ax.get_xticklabels() + ax.get_yticklabels():
+                    lbl.set_fontsize(tick_font_size)
+
+                # Update axis labels if present
+                if ax.get_xlabel():
+                    ax.set_xlabel(ax.get_xlabel(), fontsize=tick_font_size)
+                if ax.get_ylabel():
+                    ax.set_ylabel(ax.get_ylabel(), fontsize=tick_font_size)
+
+            fig1.tight_layout()
+            figs_axes.append((fig1, summary_ax))
 
             # Plot the absolute importances of each feature
-            plt.figure()
-            shap.plots.bar(shap_values)
-            plt.title(f"SHAP feature importance for {tree_name}")
-            plt.tight_layout()
+            fig2, ax2 = plt.subplots(figsize=(8, 8))
+            shap.plots.bar(
+                shap_values,
+                max_display=n_features+1,
+            )
+            #ax2.set_title(f"SHAP feature importance for {tree_name}")
+            ax2.tick_params(axis='both', which='major', labelsize=tick_font_size)
+            ax2.set_xlabel("mean(|SHAP value|)", fontsize=tick_font_size)
+            fig2.tight_layout()
+            figs_axes.append((fig2, ax2))
 
         plt.show()
-    
+        return figs_axes
+
     def plot_feature_correlation(self):
+        figs_axes = []
         # Plot the normalised feature correlation matrix, with colorbar between -1 and 1
         for tree, features, targets, tree_name, feature_names in zip(self.trees, self.features, self.targets, self.tree_names, self.feature_names_list):
-            plt.figure()
-            plt.imshow(np.corrcoef(features.T), aspect='auto', cmap='coolwarm', vmin=-1, vmax=1)
-            plt.colorbar()
+            fig, ax = plt.subplots()
+            cax = ax.imshow(np.corrcoef(features.T), aspect='auto', cmap='coolwarm', vmin=-1, vmax=1)
+            fig.colorbar(cax, ax=ax)
+            ax.set_title(f"Feature correlation for {tree_name}")
+            figs_axes.append((fig, ax))
         
         plt.show()
+        return figs_axes
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ Output:
 
   error_behavior: kill # "graceful" or "kill"
 
+# TODO: (at least part of) this should be moved to Simulation, load_events
 DataFormat:
   # Format of the data to be loaded
   sn_event_number_per_file: 1000
@@ -39,20 +40,27 @@ Simulation:
 
   # Stage load_events
   load_events:
+
+    # Parameter to kill all wall-arapuca hits in the VD
+    wall_veto: False
+
     sim_mode: xe # 'xe' or 'aronly'
+    # Channels to be used for the supernova events
+    sn_channels: ["cc", "es"]
     # Number of files to load for SN and BG
-    sn_file_limit: 140
-    bg_file_limit: 40
+    sn_file_limit: [70, 70]
+    bg_file_limit: 20
 
     #sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_snnue_pds/
     #sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_snnue_pds_cc_higheff/
     #sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_snnue_pds_cc_lowadc/
     #sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_snnue_pds_cc_highadc/
-    sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/feb25_vd_snnue_pds_es/
-    sn_hit_file_start_pattern: 'prodmarley_nue_dune10kt_vd_1x8x14'
-    sn_hit_file_end_pattern: '_g4_detsim_{}_reco_hist.root'
-    sn_info_file_end_pattern: '_stana_hist.root'
-    photon_file_end_pattern: 'NOTHING'
+    #sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/feb25_vd_snnue_pds_es/
+    sn_data_dir: [/eos/project-e/ep-nu/pbarhama/sn_saves/jun24_snnue_pds/, /eos/project-e/ep-nu/pbarhama/sn_saves/feb25_vd_snnue_pds_es/]
+    sn_hit_file_start_pattern: ['prodmarley_nue_dune10kt_vd_1x8x14', 'prodmarley_nue_dune10kt_vd_1x8x14']
+    sn_hit_file_end_pattern: ['_g4_detsim_{}_reco_hist.root', '_g4_detsim_{}_reco_hist.root']
+    sn_info_file_end_pattern: ['_stana_hist.root', '_stana_hist.root']
+    photon_file_end_pattern: ['NOTHING', 'NOTHING']
 
     bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_vd_background_juergen/
     #bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_background_juergen_higheff/
@@ -60,6 +68,12 @@ Simulation:
     #bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_background_juergen_highadc/
     bg_hit_file_start_pattern: 'prodbg_radiological_decay0_vd_dune10kt_1x8x14'
     bg_hit_file_end_pattern: '_detsim_{}_reco_hist.root'
+
+    # List of backgrounds to multiply by a factor (or null)
+    # modified_bgs:
+    #   Ar39GenInLAr: 1.0
+    #   CavernwallGammasAtLAr1x8x14: 0.333
+    modified_bgs: null
 
     load_data_in_parallel: True
     split_for_classifier: True
@@ -82,7 +96,7 @@ Simulation:
 
   # Stage bdt_training
   bdt_training:
-    optimize_hyperparameters: True
+    optimize_hyperparameters: False
     optimize_hyperparameters_random_state: 42 # Integer or None
     threshold: 0.5 # Only used for hit_multiplicity type histogram
     bdt_hyperparameters: null # null (None) or dictionary of hyperparameters. Chose either this or optimize_hyperparameters
@@ -92,21 +106,29 @@ Simulation:
     use_classifier: True
     number_of_tests: 1000
 
+    do_reweighting: False
+
     fake_trigger_rate: 3.85802469e-7 # = 1/(60 * 60 * 24 * 30) -> 1 trigger per month
-    distance_to_evaluate: 30.0  # kpc
-    burst_time_window: 1.0e+6 # microseconds
+    distance_to_evaluate: null #20.0  # kpc
+    number_of_interactions_to_evaluate: [120, 300] #300  # either this or distance_to_evaluate should be set #TODO
+    # ONLY USE ENERGY LOWER LIMIT IF USING NUMBER OF INTERACTIONS TO EVALUATE! (IF NOT THE DISTANCE IS BULLSHIT)
+    energy_lower_limit: 10 # MeV --> This is used to cut at the low-energy tail of the spectrum (i.e. to comply with the 10 MeV TDR requirement)
+    burst_time_window: 0.65e+6 # microseconds
 
     physics:
-      # supernova_spectra:
-      #   spec_type: pinching
-      #   pinching_parameters:
-      #     average_energy: 23.0
-      #     alpha: 5.0
-      #   interaction_number_10kpc: 3295
-      
       supernova_spectra:
-        spec_type: model_name
-        model_name: "GKVM"
+        label: CHIPM0NK
+        spec_type: pinching
+        pinching_parameters:
+          average_energy: 11.12
+          alpha: 2.22
+        interaction_number_10kpc:
+          cc: 3000
+          es: 500
+      
+      # supernova_spectra:
+      #   spec_type: model_name
+      #   model_name: "GKVM"
 
       # Spectrum or list of spectra to be used
       # supernova_spectra:
@@ -117,13 +139,16 @@ Simulation:
       #   - spec_type: model_name
       #     model_name: "Garching"
 
+      cross_section_cc_file: "../cross-sections/xsec_superallowed.txt"
+
     statistical_info:
       histogram_variable: bdt_output # hit_multiplicity, bdt_output (only valid if using BDT), naive_count
       statistical_method: log_likelihood_ratio # pearson_chi_squared, cash, log_likelihood_ratio
       histogram_bunch_threshold: 12.0 # THIS SHOULD BE VARIED BY VARIABLE/METHOD!
       classifier_threshold: 0.5 # Will only be used if histogram_variable is hit_multiplicity and use_classifier is True
-      use_bg_variations: False # False or int (number of variations). This will generate variations of the BG histograms based of the fact that BG is estimated from finite MC samples.
-    
+      use_bg_variations: 1 # False or int (number of variations). This will generate variations of the BG histograms based of the fact that BG is estimated from finite MC samples.
+      # Note: in practice always use int pls (just use 1 for False)
+
     error_info:
       type: bayesian # "bayesian" or "frequentist"
       params:
@@ -135,10 +160,10 @@ Detector:
   # Detector type: HD or VD
   type: VD
   geometry_version: v5 # this now does nothing
-  # Volume of the real-life TPC
-  true_tpc_size: 10
   # Used volume for the simulation geometry
   used_tpc_size: 2.6
+  # Volume of the real-life TPC
+  true_tpc_size: 10
   # Correction for the fact that TPCs are actually a bit bigger than 10kt
   tpc_size_correction_factor: 1.2
   # Correction for extra volume outside of the active volume (buffer region)

@@ -14,9 +14,25 @@ Output:
 Simulation:
   # Stage load_events
   load_events:
-    # Number of files to load for SN and BG
-    sn_file_limit: 140
+    # Number of files to load for SN and BG [CC, ES]
+    sn_channels: ["cc", "es"]
+    sn_file_limit: [140, 140]
     bg_file_limit: 40
+
+    #     sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_snnue_pds_cc_higheff/
+    # bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_vd_background_juergen_higheff/
+
+    sn_data_dir: [/eos/project-e/ep-nu/pbarhama/sn_saves/jun24_snnue_pds/, /eos/project-e/ep-nu/pbarhama/sn_saves/feb25_vd_snnue_pds_es/]
+    sn_hit_file_start_pattern: ['prodmarley_nue_dune10kt_vd_1x8x14', 'prodmarley_nue_dune10kt_vd_1x8x14']
+    sn_hit_file_end_pattern: ['_g4_detsim_{}_reco_hist.root', '_g4_detsim_{}_reco_hist.root']
+    sn_info_file_end_pattern: ['_stana_hist.root', '_stana_hist.root']
+    photon_file_end_pattern: ['NOTHING', 'NOTHING']
+
+    bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_vd_background_juergen/
+    bg_hit_file_start_pattern: 'prodbg_radiological_decay0_vd_dune10kt_1x8x14'
+    bg_hit_file_end_pattern: '_detsim_{}_reco_hist.root'
+
+    classifier_energy_limit: 30
 
   # Stage trigger_efficiency
   trigger_efficiency:
@@ -24,19 +40,55 @@ Simulation:
     number_of_tests: 1000
 
     fake_trigger_rate: 3.85802469e-7 # = 1/(60 * 60 * 24 * 30) -> 1 trigger per month
-    distance_to_evaluate: [10.0, 15.0, 25.0]  # kpc
-    burst_time_window: 1.0e+6 # microseconds
+    distance_to_evaluate: null
+    number_of_interactions_to_evaluate: [30, 60, 90, 180, 300]
+    energy_lower_limit: 10 # MeV
+    burst_time_window: 0.65e+6 # microseconds
 
     physics:
       # Spectrum or list of spectra to be used
       supernova_spectra:
-        - spec_type: model_name
-          model_name: "GKVM"
-        - spec_type: model_name
-          model_name: "Livermore"
-        - spec_type: model_name
-          model_name: "Garching"
-          
+        - spec_type: pinching
+          label: Livermore
+          pinching_parameters:
+            average_energy: 11.12
+            alpha: 2.22
+          interaction_number_10kpc:
+            cc: 4190
+            es: 600
+        - spec_type: pinching
+          label: GKVM
+          pinching_parameters:
+            average_energy: 16.95
+            alpha: 1.60
+          interaction_number_10kpc:
+            cc: 5023
+            es: 334
+        - spec_type: pinching
+          label: Garching
+          pinching_parameters:
+            average_energy: 9.40
+            alpha: 3.00
+          interaction_number_10kpc:
+            cc: 1177
+            es: 254
+        - spec_type: pinching
+          label: Nakazato30
+          pinching_parameters:
+            average_energy: 11.87
+            alpha: 2.58
+          interaction_number_10kpc:
+            cc: 4007
+            es: 498
+
+    # For some weird buggy reason it seems like you need to include this whole block in the config file
+    # TODO: fix
+    statistical_info:
+      histogram_variable: bdt_output # hit_multiplicity, bdt_output (only valid if using BDT), naive_count
+      statistical_method: log_likelihood_ratio # pearson_chi_squared, cash, log_likelihood_ratio
+      histogram_bunch_threshold: 12.0 # THIS SHOULD BE VARIED BY VARIABLE/METHOD!
+      classifier_threshold: 0.5 # Will only be used if histogram_variable is hit_multiplicity and use_classifier is True
+      use_bg_variations: 300
     
   # Stage clustering
   clustering:

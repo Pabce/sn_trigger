@@ -1,0 +1,4 @@
+Livermore /eos/home-p/pbarhama/myway/trigger-sept24/configs/optimized_vd_laronly/optimized_vd_laronly_Livermore_num_interactions_90_0.yaml
+GKVM /eos/home-p/pbarhama/myway/trigger-sept24/configs/optimized_vd_laronly/optimized_vd_laronly_GKVM_num_interactions_60_0.yaml
+Garching /eos/home-p/pbarhama/myway/trigger-sept24/configs/optimized_vd_laronly/optimized_vd_laronly_Garching_num_interactions_180_0.yaml
+Nakazato30 /eos/home-p/pbarhama/myway/trigger-sept24/configs/optimized_vd_laronly/optimized_vd_laronly_Nakazato30_num_interactions_90_0.yaml

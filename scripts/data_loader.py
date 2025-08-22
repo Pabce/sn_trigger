@@ -38,7 +38,7 @@ class DataLoader:
         # self.log.exception("This is an exception")
 
 
-    def load_and_split(self, sn_limit, bg_limit, shuffle=False):
+    def load_and_split(self, sn_limit, bg_limit, shuffle=False, wall_veto=False):
         '''
         Load the signal and backgrounds and split them into train and efficiency computation sets
         '''
@@ -48,18 +48,23 @@ class DataLoader:
         split_for_classifier = self.config.get("Simulation", "load_events", "split_for_classifier")
         classifier_energy_limit = self.config.get("Simulation", "load_events", "classifier_energy_limit") if split_for_classifier else 1e5
         train_split = self.config.get("Simulation", "load_events", "train_split")
+        sn_channels = self.config.get("Simulation", "load_events", "sn_channels")
 
         bg_sample_length = self.config.get("DataFormat", "bg_sample_length")
         bg_sample_number_per_file = self.config.get("DataFormat", "bg_sample_number_per_file")
         load_data_in_parallel = self.config.get("Simulation", "load_events", "load_data_in_parallel")
         # -----------------
 
-        self.log.info("Loading SN data...")
-        sn_total_hits, sn_hit_list_per_event, sn_info_per_event, _, _ = self.load_all_sn_events_chunky(limit=sn_limit, load_data_in_parallel=load_data_in_parallel)
-        self.log.info("SN data loaded")
+
+        self.log.info(f"Loading SN data...")
+        # These are now dictionaries, one entry per channel
+        sn_total_hits, sn_hit_list_per_event, sn_info_per_event, _, _ = self.load_all_sn_events_chunky(limit=sn_limit, 
+                                                                                                        load_data_in_parallel=load_data_in_parallel)
+        self.log.info(f"SN data loaded")
         
         self.log.info("Loading BG data...")
-        bg_total_hits, bg_hit_list_per_event, _, _= self.load_all_backgrounds_chunky_type_separated(limit=bg_limit, load_data_in_parallel=load_data_in_parallel)
+        bg_total_hits, bg_hit_list_per_event, bg_info_per_event, _, _= self.load_all_backgrounds_chunky_type_separated(limit=bg_limit, 
+                                                                                                    load_data_in_parallel=load_data_in_parallel)
         total_bg_time_window = len(bg_hit_list_per_event) * bg_sample_length # in miliseconds
         self.log.info("BG data loaded")
 
@@ -67,49 +72,92 @@ class DataLoader:
         #del sn_total_hits, bg_total_hits
 
         # Do this for convenient shuffling/energy filtering later
-        sn_info_per_event = np.array(sn_info_per_event)
-        sn_hit_list_per_event = np.array(sn_hit_list_per_event, dtype=object)
+        for sn_channel in sn_channels:
+            sn_info_per_event[sn_channel] = np.array(sn_info_per_event[sn_channel])
+            sn_hit_list_per_event[sn_channel] = np.array(sn_hit_list_per_event[sn_channel], dtype=object)
+        # Convert BG lists to numpy arrays for shuffling
+        bg_hit_list_per_event = np.array(bg_hit_list_per_event, dtype=object)
+        bg_info_per_event = np.array(bg_info_per_event, dtype=object)
 
         if shuffle:
             # Shuffle the SN and BG events. This seems especially important as the parallel loading of the BG files messes things up
             # TODO: better investigate this
             # TODO: move the shuffling to the loading functions
             # Shuffle the SN events
-            sn_shuffled_indices = np.arange(len(sn_info_per_event))
-            np.random.shuffle(sn_shuffled_indices)
-            sn_info_per_event = sn_info_per_event[sn_shuffled_indices]
-            sn_hit_list_per_event = sn_hit_list_per_event[sn_shuffled_indices]
+            for sn_channel in sn_channels:
+                sn_shuffled_indices = np.arange(len(sn_info_per_event[sn_channel]))
+                np.random.shuffle(sn_shuffled_indices)
+                sn_info_per_event[sn_channel] = sn_info_per_event[sn_channel][sn_shuffled_indices]
+                sn_hit_list_per_event[sn_channel] = sn_hit_list_per_event[sn_channel][sn_shuffled_indices]
 
             # Shuffle the BG events
-            random.shuffle(bg_hit_list_per_event)
+            bg_shuffled_indices = np.arange(len(bg_info_per_event))
+            np.random.shuffle(bg_shuffled_indices)
+            bg_hit_list_per_event = bg_hit_list_per_event[bg_shuffled_indices]
+            bg_info_per_event = bg_info_per_event[bg_shuffled_indices]
+        
+        if wall_veto:
+            console.log("Applying wall veto")
+            # Kill all wall-arapuca hits in the VD
+            for sn_channel in sn_channels:
+                for i, hit_list in enumerate(sn_hit_list_per_event[sn_channel]):
+                    if hit_list.shape[0] == 0:
+                        continue
+                    x_hit_coordinates = hit_list[:, 4]
+                    x_mask = x_hit_coordinates < 0
+                    sn_hit_list_per_event[sn_channel][i] = hit_list[x_mask, :]
+                    # You don't need to modify sn_info_per_event, as it just contains the underlying SN event truth information
+                    # print(f"SN {sn_channel}", x_mask.sum(), len(hit_list), len(sn_hit_list_per_event[sn_channel][i]))
+                    # print(sn_hit_list_per_event[sn_channel][i][:, 4:7])
+            # Do the same for the BG events
+            for i, hit_list in enumerate(bg_hit_list_per_event):
+                if hit_list.shape[0] == 0:
+                    continue
+                x_hit_coordinates = hit_list[:, 4]
+                x_mask = x_hit_coordinates < 0
+                bg_hit_list_per_event[i] = hit_list[x_mask, :]
+                # In this case, you DO need to modify bg_info_per_event, as it contains the background type information PER HIT
+                #print(bg_info_per_event[i])
+                bg_info_per_event[i] = np.array(bg_info_per_event[i])[x_mask]
+                #print("bg", x_mask.sum(), len(hit_list), len(bg_hit_list_per_event[i]))
 
         # We need to spit the SN and BG events for training the BDT and efficiency evaluation 
         # (this is not a train/test split, that is done in the BDT training later)
+        split_point_sn = {}
         if split_for_classifier:
-            split_point_sn = int(len(sn_info_per_event) * train_split)
+            for sn_channel in sn_channels:
+                split_point_sn[sn_channel] = int(len(sn_info_per_event[sn_channel]) * train_split)
             split_point_bg = int(len(bg_hit_list_per_event) * train_split)
         else:
-            split_point_sn = 0
+            for sn_channel in sn_channels:
+                split_point_sn[sn_channel] = 0
             split_point_bg = 0
 
-        sn_bdt_info_per_event = sn_info_per_event[:split_point_sn]
-        sn_bdt_hit_list_per_event = sn_hit_list_per_event[:split_point_sn] 
+        sn_bdt_info_per_event = {}
+        sn_bdt_hit_list_per_event = {}
+        sn_eff_info_per_event = {}
+        sn_eff_hit_list_per_event = {}
+        for sn_channel in sn_channels:
+            sn_bdt_info_per_event[sn_channel] = sn_info_per_event[sn_channel][:split_point_sn[sn_channel]]
+            sn_bdt_hit_list_per_event[sn_channel] = sn_hit_list_per_event[sn_channel][:split_point_sn[sn_channel]] 
 
-        # Filter the SN events that are above the BDT energy limit
-        sn_bdt_hit_list_per_event = sn_bdt_hit_list_per_event[sn_bdt_info_per_event[:, 0] < classifier_energy_limit]
-        sn_bdt_info_per_event = sn_bdt_info_per_event[sn_bdt_info_per_event[:, 0] < classifier_energy_limit]
+            # Filter the SN events that are above the BDT energy limit
+            sn_bdt_hit_list_per_event[sn_channel] = sn_bdt_hit_list_per_event[sn_channel][sn_bdt_info_per_event[sn_channel][:, 0] < classifier_energy_limit]
+            sn_bdt_info_per_event[sn_channel] = sn_bdt_info_per_event[sn_channel][sn_bdt_info_per_event[sn_channel][:, 0] < classifier_energy_limit]
 
-        # Do the second split
-        sn_eff_info_per_event = sn_info_per_event[split_point_sn:]
-        sn_eff_hit_list_per_event = sn_hit_list_per_event[split_point_sn:]
+            # Do the second split
+            sn_eff_info_per_event[sn_channel] = sn_info_per_event[sn_channel][split_point_sn[sn_channel]:]
+            sn_eff_hit_list_per_event[sn_channel] = sn_hit_list_per_event[sn_channel][split_point_sn[sn_channel]:]
         
         bg_bdt_hit_list_per_event = bg_hit_list_per_event[:split_point_bg]
+        bg_bdt_info_per_event = bg_info_per_event[:split_point_bg]
         bg_eff_hit_list_per_event = bg_hit_list_per_event[split_point_bg:]
+        bg_eff_info_per_event = bg_info_per_event[split_point_bg:]
         #console.log(split_point_bg, len(bg_hit_list_per_event))
 
-        return (sn_hit_list_per_event, bg_hit_list_per_event, sn_info_per_event,
-                sn_eff_hit_list_per_event, sn_bdt_hit_list_per_event, sn_eff_info_per_event,
-                sn_bdt_info_per_event, bg_eff_hit_list_per_event, bg_bdt_hit_list_per_event,
+        return (sn_hit_list_per_event, bg_hit_list_per_event, sn_info_per_event, bg_info_per_event,
+                sn_eff_hit_list_per_event, sn_bdt_hit_list_per_event, sn_eff_info_per_event, bg_eff_info_per_event,
+                sn_bdt_info_per_event, bg_eff_hit_list_per_event, bg_bdt_hit_list_per_event, bg_bdt_info_per_event,
                 total_bg_time_window)
 
 
@@ -123,20 +171,25 @@ class DataLoader:
         startswith = self.config.get("Simulation", "load_events", "bg_hit_file_start_pattern")
         endswith = self.config.get("Simulation", "load_events", "bg_hit_file_end_pattern").format(sim_mode)
         # -----------------
+        # We might have some backgrounds to multiply by a factor
+        modified_bgs = self.config.get("Simulation", "load_events", "modified_bgs")
+        # -------------------------------------------------------------------------
 
         bg_total_hits = []
         bg_hit_list_per_event = []
+        bg_info_per_event = []
 
         bg_total_hits_per_type = {bg_type: [] for bg_type in bg_types}
         bg_hit_list_per_event_per_type = {bg_type: [] for bg_type in bg_types}
         
+        # Get the directories for each background type
         directories = []
         for bg_type in bg_types:
             #directory = os.fsencode(bg_data_dir + bg_type + '/')
             directory = bg_data_dir + bg_type + '/'
             directories.append(directory)
 
-        # Collect valid file names
+        # Collect valid file names for each background type
         reco_file_names_per_type = []
         for i, directory in enumerate(directories):
             bg_type = bg_types[i]
@@ -171,6 +224,24 @@ class DataLoader:
                 _, _, _,
             ) = self.accumulate_results(results, load_photon_info=False, sn_event=False)
 
+            # If we have a modified background, just keep a random fraction of the hits
+            if modified_bgs is not None:
+                if bg_type in modified_bgs.keys():
+                    keep_fraction = modified_bgs[bg_type]
+                    console.log("BG type: ", bg_type)
+                    console.log("Keep fraction: ", keep_fraction)
+                    bg_total_hits_i = []
+                    
+                    for j in range(len(bg_hit_list_per_event_i)):
+                        num_original_hits = len(bg_hit_list_per_event_i[j])
+                        num_hits_to_keep = int(num_original_hits * keep_fraction)
+                        bg_hit_list_per_event_i[j] = bg_hit_list_per_event_i[j][:num_hits_to_keep]
+
+                        # console.log("BG type: ", bg_type)
+                        # console.log(f"Keeping {num_hits_to_keep} hits from {num_original_hits} hits")
+
+                        bg_total_hits_i.extend(bg_hit_list_per_event_i[j])
+
             bg_total_hits_per_type[bg_type].append(bg_total_hits_i)
             bg_hit_list_per_event_per_type[bg_type].extend(bg_hit_list_per_event_i)
 
@@ -185,21 +256,38 @@ class DataLoader:
         # Create the total hit list per event, combining all bakcgrounds
         for i, _ in enumerate(bg_hit_list_per_event_per_type[bg_types[0]]):
             hit_list = []
+            info_list = []
             for j, bg_type in enumerate(bg_types):
                 hit_list.extend(bg_hit_list_per_event_per_type[bg_type][i])
+                info_list.extend([bg_types[j]] * len(bg_hit_list_per_event_per_type[bg_type][i]))
 
-            # Now, we need to order the hits in time once again
+            # Convert to numpy arrays for consistent indexing/sorting
             hit_list = np.array(hit_list)
-            if hit_list.shape != (0,):
-                time_sort = np.argsort(hit_list[:,3])
-                hit_list = hit_list[time_sort, :]
+            info_list = np.array(info_list)
 
-            bg_hit_list_per_event.append(np.array(hit_list))
+            # Sort both the hits and their corresponding background-type labels by time so that
+            # the mapping "hit - bg_type" is preserved after the time ordering.
+            # NOTE: the original implementation only reordered `hit_list`, leaving `info_list`
+            # unsorted, which broke the alignment and resulted in every bg_type apparently having
+            # the same spatial distribution.  We fix that by applying the same permutation
+            # (`time_sort`) to `info_list`.
+            if hit_list.shape != (0,):
+                time_sort = np.argsort(hit_list[:, 3])  # sort by time column
+                hit_list = hit_list[time_sort, :]
+                info_list = info_list[time_sort]
+
+            bg_info_per_event.append(info_list.tolist())
+            bg_hit_list_per_event.append(hit_list)
             bg_total_hits.extend(hit_list)
             
+        # bg_total_hits: List[np.ndarray] - List containing all hits from all background events, potentially mixed types. Each element is one hit array.
+        # bg_hit_list_per_event: List[np.ndarray] - List where each element is a numpy array of time-ordered hits for a single combined background event.
+        # bg_total_hits_per_type: Dict[str, np.ndarray] - Dictionary mapping background type string to a single numpy array containing all hits for that type.
+        # bg_hit_list_per_event_per_type: Dict[str, List[np.ndarray]] - Dictionary mapping background type string to a list of numpy arrays, where each array contains hits for one event of that specific type.
         return (
             bg_total_hits,
             bg_hit_list_per_event,
+            bg_info_per_event,
             bg_total_hits_per_type,
             bg_hit_list_per_event_per_type
         )
@@ -224,49 +312,60 @@ class DataLoader:
 
         # Config reads ----
         detector_type = self.config.get("Detector", "type")
+        event_num = self.config.get("DataFormat", "sn_event_number_per_file")
+        sn_channels = self.config.get("Simulation", "load_events", "sn_channels")
+
         sn_data_dir = self.config.get("Simulation", "load_events", "sn_data_dir")
         sim_mode = self.config.get('Simulation', 'load_events', 'sim_mode')
-        event_num = self.config.get("DataFormat", "sn_event_number_per_file")
         startswith = self.config.get("Simulation", "load_events", "sn_hit_file_start_pattern")
-        endswith = self.config.get("Simulation", "load_events", "sn_hit_file_end_pattern").format(sim_mode)
+        endswith = self.config.get("Simulation", "load_events", "sn_hit_file_end_pattern")
+        endswith = [el.format(sim_mode) for el in endswith]
         info_endswith = self.config.get("Simulation", "load_events", "sn_info_file_end_pattern")
         photon_endswith = self.config.get("Simulation", "load_events", "photon_file_end_pattern")
         # -----------------
 
-        # Collect valid file names
-        reco_file_names, info_file_names, photon_file_names = self.collect_valid_file_names(
-            sn_data_dir,
-            startswith,
-            endswith,
-            info_endswith,
-            event_num,
-            photon_endswith,
-            load_photon_info,
-            limit,
-            offset,
-            data_type_str="SN data"
-        )
+        sn_total_hits = {}
+        sn_hit_list_per_event = {}
+        sn_total_info = {}
+        sn_total_info_per_event = {}
+        total_photons_per_channel = {}
 
-        # Process files in parallel
-        results = self.process_files(
-            reco_file_names,
-            info_file_names,
-            event_num,
-            load_photon_info,
-            photon_file_names,
-            sn_event=True,
-            data_type_str="SN data",
-            in_parallel=load_data_in_parallel
-        )
+        for i, sn_channel in enumerate(sn_channels):
+            # Collect valid file names
+            #console.log(sn_channel, sn_data_dir)
+            reco_file_names, info_file_names, photon_file_names = self.collect_valid_file_names(
+                sn_data_dir[i],
+                startswith[i],
+                endswith[i],
+                info_endswith[i],
+                event_num,
+                photon_endswith[i],
+                load_photon_info,
+                limit[i],
+                offset,
+                data_type_str=f"{sn_channel} SN data"
+            )
 
-        # Accumulate results
-        (
-            sn_total_hits,
-            sn_hit_list_per_event,
-            sn_total_info,
-            sn_total_info_per_event,
-            total_photons_per_channel,
-        ) = self.accumulate_results(results, load_photon_info, sn_event=True)
+            # Process files in parallel
+            results = self.process_files(
+                reco_file_names,
+                info_file_names,
+                event_num,
+                load_photon_info,
+                photon_file_names,
+                sn_event=True,
+                data_type_str=f"{sn_channel} SN data",
+                in_parallel=load_data_in_parallel
+            )
+
+            # Accumulate results
+            (
+                sn_total_hits[sn_channel],
+                sn_hit_list_per_event[sn_channel],
+                sn_total_info[sn_channel],
+                sn_total_info_per_event[sn_channel],
+                total_photons_per_channel[sn_channel],
+            ) = self.accumulate_results(results, load_photon_info, sn_event=True)
 
         return (
             sn_total_hits,
@@ -590,7 +689,10 @@ class DataLoader:
         # uproot_neutrino = uproot.open(file_name)["vdflashmatch/FlashMatchTree"]
         # info_dict = uproot_neutrino.arrays(['TrueE', 'TrueX', 'TrueY', 'TrueZ'], library="np")
         uproot_neutrino = uproot.open(file_name)["analysistree"]
-        info_dict = uproot_neutrino["anatree"].arrays(['enu_truth', 'nuvtxx_truth', 'nuvtxy_truth', 'nuvtxz_truth'], library="np")
+        info_dict = uproot_neutrino["anatree"].arrays(['enu_truth', 'nuvtxx_truth', 
+                                                       'nuvtxy_truth', 'nuvtxz_truth',
+                                                       'lep_mom_truth', 'lep_dcosx_truth',
+                                                       'lep_dcosy_truth', 'lep_dcosz_truth'], library="np")
 
         info = [np.concatenate(info_dict[key]) for key in info_dict]
         info_per_event_arr = np.array(info).T

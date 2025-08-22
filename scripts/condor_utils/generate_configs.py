@@ -102,12 +102,20 @@ def generate_random_configs(n_configs, starting_config_number, delete_old, base_
 
 
 # Function to generate configs based on the best performing configurations
-def generate_top_n_configs(top_configs_df, configs_col, model_names, distances,
+def generate_top_n_configs(top_configs_df, configs_col, model_names, distances_or_num_interactions,
                                 starting_config_number, delete_old, base_config_file_path, 
                                 config_output_dir, config_output_base_str, 
-                                config_list_file_name, new_distances_per_model):
+                                config_list_file_name, new_distances_per_model, new_num_interactions_per_model):
     # Absolute path to the list file
     config_list_file = config_output_dir + config_list_file_name
+
+    # distances or num_interactions?
+    if new_distances_per_model:
+        distances_or_num_interactions_str = 'distance'
+    elif new_num_interactions_per_model:
+        distances_or_num_interactions_str = 'num_interactions'
+    else:
+        raise ValueError("No distances or num_interactions provided")
 
     # Clear the list file
     with open(config_list_file, 'w') as f:
@@ -117,20 +125,20 @@ def generate_top_n_configs(top_configs_df, configs_col, model_names, distances,
         delete_old_configs(config_output_dir, config_output_base_str)
 
     for model in model_names:
-        for distance in distances:
-            for i, index in enumerate(top_configs_df[model][distance].index):
+        for d in distances_or_num_interactions:
+            for i, index in enumerate(top_configs_df[model][d].index):
                 config_number = starting_config_number + i
 
-                info_output = top_configs_df[model][distance].loc[index]
+                info_output = top_configs_df[model][d].loc[index]
                 config = configs_col.loc[index]
                 
                 clustering_parameters = config['Simulation']['clustering']['parameters']
 
-                print(f"\nModel: {model}, Distance: {distance}, Index: {index}")
+                print(f"\nModel: {model}, {distances_or_num_interactions_str}: {d}, Index: {index}")
 
                 # Create a new config file with the bdt parameters and the clustering parameters
 
-                config_file_path = config_output_dir + f'{config_output_base_str}{model}_{distance}_{i}.yaml'
+                config_file_path = config_output_dir + f'{config_output_base_str}{model}_{distances_or_num_interactions_str}_{d}_{i}.yaml'
                 # Remove whitespace from the output file name (TEMPORARY FIX)
                 config_file_path = config_file_path.replace(' ', '_')
 
@@ -142,9 +150,25 @@ def generate_top_n_configs(top_configs_df, configs_col, model_names, distances,
                     parameters['bdt_hyperparameters'] = info_output['bdt_training']['bdt_hyperparameters']
                 except KeyError: # This is for older info outputs
                     parameters['bdt_hyperparameters'] = info_output['bdt_training']['bdt_params']
-                parameters['distance_to_evaluate'] = new_distances_per_model[model]
-                # parameters['model_name'] = model # TEMP FIX
-                parameters['model_name'] = model.split(' ')[0] # TEMP FIX
+
+                if distances_or_num_interactions == 'distance':
+                    parameters['distance_to_evaluate'] = new_distances_per_model[model]
+                    parameters['number_of_interactions_to_evaluate'] = 'null'
+                else:
+                    parameters['number_of_interactions_to_evaluate'] = new_num_interactions_per_model[model]
+                    parameters['distance_to_evaluate'] = 'null'
+                
+                # Get the model parameters
+                parameters['label'] = model
+
+                # Search for the model that contains the string label: <model>
+                model_index = [i for i, s in enumerate(info_output['config']['Simulation']['trigger_efficiency']['physics']['supernova_spectra']) if s['label']==model][0]
+
+                # Get the model parameters
+                parameters['average_energy'] = info_output['config']['Simulation']['trigger_efficiency']['physics']['supernova_spectra'][model_index]['pinching_parameters']['average_energy']
+                parameters['alpha'] = info_output['config']['Simulation']['trigger_efficiency']['physics']['supernova_spectra'][model_index]['pinching_parameters']['alpha']
+                parameters['num_interactions_cc'] = info_output['config']['Simulation']['trigger_efficiency']['physics']['supernova_spectra'][model_index]['interaction_number_10kpc']['cc']
+                parameters['num_interactions_es'] = info_output['config']['Simulation']['trigger_efficiency']['physics']['supernova_spectra'][model_index]['interaction_number_10kpc']['es']
 
                 write_config(base_config_file_path, config_file_path, parameters)
 
@@ -153,6 +177,92 @@ def generate_top_n_configs(top_configs_df, configs_col, model_names, distances,
                 print(f'Configuration {config_number} written to {absolute_config_file_path}')
                 with open(config_list_file, 'a') as f:
                     f.write(absolute_config_file_path + '\n')
+
+
+# Function to generate configs sampling the <E, alpha> parameter space, given an optimal configuration
+def generate_sn_parameter_grid_random_configs(n_configs, top_configs_df, configs_col, model_to_select, model_to_label, 
+                                distance_or_num_interactions,
+                                starting_config_number, delete_old, base_config_file_path, 
+                                config_output_dir, config_output_base_str, 
+                                config_list_file_name, new_distances_per_model, new_num_interactions_per_model,
+                                supernova_parameter_grid):
+
+    # Absolute path to the list file
+    config_list_file = config_output_dir + config_list_file_name
+
+    # distances or num_interactions?
+    if new_distances_per_model:
+        distances_or_num_interactions_str = 'distance'
+    elif new_num_interactions_per_model:
+        distances_or_num_interactions_str = 'num_interactions'
+    else:
+        raise ValueError("No distances or num_interactions provided")
+
+    # Clear the list file
+    with open(config_list_file, 'w') as f:
+        pass
+    # Remove any existing config files if required
+    if delete_old:
+        delete_old_configs(config_output_dir, config_output_base_str)
+
+    model = model_to_select
+
+    top_config_index = top_configs_df[model][distance_or_num_interactions].index[0]
+    top_config = top_configs_df[model][distance_or_num_interactions].loc[top_config_index]
+    info_output = top_configs_df[model][distance_or_num_interactions].loc[top_config_index]
+    config = configs_col.loc[top_config_index]
+    
+
+    for i in range(n_configs):
+
+        config_number = starting_config_number + i
+        clustering_parameters = config['Simulation']['clustering']['parameters']
+
+        print(f"\nModel: {model_to_label}, {distances_or_num_interactions_str}: {distance_or_num_interactions}, Index: {top_config_index}")
+
+        # Create a new config file with the bdt parameters and the clustering parameters
+        config_file_path = config_output_dir + f'{config_output_base_str}{model_to_label}_{distances_or_num_interactions_str}_{config_number}.yaml'
+        # Remove whitespace from the output file name (TEMPORARY FIX)
+        config_file_path = config_file_path.replace(' ', '_')
+
+        parameters = {}
+        parameters.update(clustering_parameters)
+        parameters['optimize_hyperparameters'] = False
+        parameters['bdt_hyperparameters'] = info_output['bdt_training']['bdt_hyperparameters']
+
+        if distances_or_num_interactions_str == 'distance':
+            parameters['distance_to_evaluate'] = new_distances_per_model[model]
+            parameters['number_of_interactions_to_evaluate'] = 'null'
+        else:
+            parameters['number_of_interactions_to_evaluate'] = new_num_interactions_per_model[model]
+            parameters['distance_to_evaluate'] = 'null'
+        
+        # Set the 'custom model' label
+        parameters['label'] = model_to_label
+
+        # Sample the supernova parameters
+
+        for key, value in supernova_parameter_grid.items():
+            if value['mode'] == 'uniform':
+                param_value = np.random.uniform(value['range'][0], value['range'][1])
+            elif value['mode'] == 'grid':
+                param_value = np.random.choice(value['values'])
+
+            parameters[key] = param_value
+        
+        # And add these placeholder values
+        # Search for the model that contains the string label: <model>
+        model_index = [i for i, s in enumerate(info_output['config']['Simulation']['trigger_efficiency']['physics']['supernova_spectra']) if s['label']==model][0]
+        parameters['num_interactions_cc'] = info_output['config']['Simulation']['trigger_efficiency']['physics']['supernova_spectra'][model_index]['interaction_number_10kpc']['cc']
+        parameters['num_interactions_es'] = info_output['config']['Simulation']['trigger_efficiency']['physics']['supernova_spectra'][model_index]['interaction_number_10kpc']['es']
+
+        write_config(base_config_file_path, config_file_path, parameters)
+
+        # Write the (absolute path) config file name to the list file
+        absolute_config_file_path = os.path.abspath(config_file_path)
+        print(f'Configuration {config_number} written to {absolute_config_file_path}')
+        with open(config_list_file, 'a') as f:
+            f.write(absolute_config_file_path + '\n')
 
 
 if __name__ == '__main__':
@@ -174,12 +284,48 @@ if __name__ == '__main__':
     np.random.seed(None)
 
     # Standard VD
-    # # The base config file to modify
+    # The base config file to modify
     # base_config_file = '../../configs/random_vd/base_random_vd.yaml'
     # # The config output files destination
     # config_output_dir = '../../configs/random_vd/'
     # config_output_base_str = 'random_vd_'
     # config_list_file_name = 'random_vd_config_list.txt'
+
+    # # Standard VD CC only
+    # base_config_file = '../../configs/random_vd_cconly/base_random_vd_cconly.yaml'
+    # config_output_dir = '../../configs/random_vd_cconly/'
+    # config_output_base_str = 'random_vd_cconly_'
+    # config_list_file_name = 'random_vd_cconly_config_list.txt'
+
+    # # Standard VD CC only long
+    # base_config_file = '../../configs/random_vd_cconly_long/base_random_vd_cconly_long.yaml'
+    # config_output_dir = '../../configs/random_vd_cconly_long/'
+    # config_output_base_str = 'random_vd_cconly_long_'
+    # config_list_file_name = 'random_vd_cconly_long_config_list.txt'
+
+    # # Standard VD laronly
+    # base_config_file = '../../configs/random_vd_laronly/base_random_vd_laronly.yaml'
+    # config_output_dir = '../../configs/random_vd_laronly/'
+    # config_output_base_str = 'random_vd_laronly_'
+    # config_list_file_name = 'random_vd_laronly_config_list.txt'
+
+    # Low gammas VD
+    # base_config_file = '../../configs/random_vd_lowgammas/base_random_vd_lowgammas.yaml'
+    # config_output_dir = '../../configs/random_vd_lowgammas/'
+    # config_output_base_str = 'random_vd_lowgammas_'
+    # config_list_file_name = 'random_vd_lowgammas_config_list.txt'
+
+    # Super low gammas VD
+    # base_config_file = '../../configs/random_vd_superlowgammas/base_random_vd_superlowgammas.yaml'
+    # config_output_dir = '../../configs/random_vd_superlowgammas/'
+    # config_output_base_str = 'random_vd_superlowgammas_'
+    # config_list_file_name = 'random_vd_superlowgammas_config_list.txt'
+
+    # Low radon VD
+    # base_config_file = '../../configs/random_vd_lowradon/base_random_vd_lowradon.yaml'
+    # config_output_dir = '../../configs/random_vd_lowradon/'
+    # config_output_base_str = 'random_vd_lowradon_'
+    # config_list_file_name = 'random_vd_lowradon_config_list.txt'
 
     # High efficiency VD
     # base_config_file = '../../configs/random_vd_higheff/base_random_vd_higheff.yaml'
@@ -187,14 +333,25 @@ if __name__ == '__main__':
     # config_output_base_str = 'random_vd_higheff_'
     # config_list_file_name = 'random_vd_higheff_config_list.txt'
 
+    # Random VD RW
+    # base_config_file = '../../configs/random_vd_rw/base_random_vd_rw.yaml'
+    # config_output_dir = '../../configs/random_vd_rw/'
+    # config_output_base_str = 'random_vd_rw_'
+    # config_list_file_name = 'random_vd_rw_config_list.txt'
+
+    # Random VD nowall
+    base_config_file = '../../configs/random_vd_nowall/base_random_vd_nowall.yaml'
+    config_output_dir = '../../configs/random_vd_nowall/'
+    config_output_base_str = 'random_vd_nowall_'
+    config_list_file_name = 'random_vd_nowall_config_list.txt'
+
     # High ADC VD
-    base_config_file = '../../configs/random_vd_highadc/base_random_vd_highadc.yaml'
-    config_output_dir = '../../configs/random_vd_highadc/'
-    config_output_base_str = 'random_vd_highadc_'
-    config_list_file_name = 'random_vd_highadc_config_list.txt'
+    # base_config_file = '../../configs/random_vd_highadc/base_random_vd_highadc.yaml'
+    # config_output_dir = '../../configs/random_vd_highadc/'
+    # config_output_base_str = 'random_vd_highadc_'
+    # config_list_file_name = 'random_vd_highadc_config_list.txt'
 
     # Standard HD
-    # The base config file to modify
     # base_config_file = '../../configs/random_hd/base_random_hd.yaml'
     # # The config output files destination
     # config_output_dir = '../../configs/random_hd/'
@@ -211,10 +368,10 @@ if __name__ == '__main__':
     # The clustering parameters
     # TODO: Add support for other clustering algorithms
     clustering_parameter_grid = {
-        'max_cluster_time': {'mode': 'uniform', 'range': [0.05, 0.5]},
-        'max_hit_time_diff': {'mode': 'uniform-constrained', 'range': [0.05, 0.5], 'constraint': 'max_cluster_time'},
-        'max_hit_distance': {'mode': 'uniform', 'range': [100, 1100]},
-        'min_hit_multiplicity': {'mode': 'grid', 'values': [6, 7, 8, 9, 10, 11, 12, 13, 14, 15]},
+        'max_cluster_time': {'mode': 'uniform', 'range': [0.01, 0.7]},
+        'max_hit_time_diff': {'mode': 'uniform-constrained', 'range': [0.01, 0.7], 'constraint': 'max_cluster_time'},
+        'max_hit_distance': {'mode': 'uniform', 'range': [500, 2500]}, # VD, make smaller for HD
+        'min_hit_multiplicity': {'mode': 'grid', 'values': [6, 7, 8, 9, 10, 11, 12, 13]},
         'min_neighbours': {'mode': 'grid', 'values': [1, 2]}
     }
 

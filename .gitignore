@@ -12,3 +12,6 @@ __pycache__
 *.pyc
 .venv
 snowglobes
+local_saves
+*.ipynb
+install-tl-*

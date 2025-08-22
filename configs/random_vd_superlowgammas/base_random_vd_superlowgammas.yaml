@@ -1,0 +1,111 @@
+# Some configuration for the trigger algorithm
+
+# Default config file. 
+# The values not explicitly declared in this file will be pulled from this config.
+DEFAULT_CONFIG_FILE: ../configs/default_config_vd.yaml
+
+Output:
+  stages_with_saved_output_data: null # "all", "last", None, or list of stages
+  # Output file for the trigger output (must be a single file if stages_with_saved_output is set to "last", else a dictionary with keys as stage names)
+  output_data_file: null # Overrideable by the command line (only if stages_with_saved_output is set to "last")
+  # output_info_file: **output_info_file**
+  error_behavior: graceful # "graceful" or "kill"
+
+Simulation:
+  # Stage load_events
+  load_events:
+    # Number of files to load for SN and BG [CC, ES]
+    sn_channels: ["cc"]
+    sn_file_limit: [140]
+    bg_file_limit: 40
+
+    sn_data_dir: [/eos/project-e/ep-nu/pbarhama/sn_saves/jun24_snnue_pds/]
+    sn_hit_file_start_pattern: ['prodmarley_nue_dune10kt_vd_1x8x14']
+    sn_hit_file_end_pattern: ['_g4_detsim_{}_reco_hist.root']
+    sn_info_file_end_pattern: ['_stana_hist.root']
+    photon_file_end_pattern: ['NOTHING']
+    
+    # Set gammas to 1/3 of their original number
+    modified_bgs:
+      Ar39GenInLAr: 1.0
+      CavernwallGammasAtLAr1x8x14: 0.10
+
+    bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jun24_vd_background_juergen/
+    bg_hit_file_start_pattern: 'prodbg_radiological_decay0_vd_dune10kt_1x8x14'
+    bg_hit_file_end_pattern: '_detsim_{}_reco_hist.root'
+
+    classifier_energy_limit: 30
+
+  # Stage trigger_efficiency
+  trigger_efficiency:
+    use_classifier: True
+    number_of_tests: 1000
+
+    fake_trigger_rate: 3.85802469e-7 # = 1/(60 * 60 * 24 * 30) -> 1 trigger per month
+    distance_to_evaluate: null
+    number_of_interactions_to_evaluate: [30, 60, 90, 180, 300]
+    energy_lower_limit: 10 # MeV
+    burst_time_window: 0.65e+6 # microseconds
+
+    physics:
+      # Spectrum or list of spectra to be used
+      supernova_spectra:
+        - spec_type: pinching
+          label: Livermore
+          pinching_parameters:
+            average_energy: 11.12
+            alpha: 2.22
+          interaction_number_10kpc:
+            cc: 4190
+            es: 0
+        - spec_type: pinching
+          label: GKVM
+          pinching_parameters:
+            average_energy: 16.95
+            alpha: 1.60
+          interaction_number_10kpc:
+            cc: 5023
+            es: 0
+        - spec_type: pinching
+          label: Garching
+          pinching_parameters:
+            average_energy: 9.40
+            alpha: 3.00
+          interaction_number_10kpc:
+            cc: 1177
+            es: 0
+        - spec_type: pinching
+          label: Nakazato30
+          pinching_parameters:
+            average_energy: 11.87
+            alpha: 2.58
+          interaction_number_10kpc:
+            cc: 4007
+            es: 0
+
+    # For some weird buggy reason it seems like you need to include this whole block in the config file
+    # TODO: fix
+    statistical_info:
+      histogram_variable: bdt_output # hit_multiplicity, bdt_output (only valid if using BDT), naive_count
+      statistical_method: log_likelihood_ratio # pearson_chi_squared, cash, log_likelihood_ratio
+      histogram_bunch_threshold: 12.0 # THIS SHOULD BE VARIED BY VARIABLE/METHOD!
+      classifier_threshold: 0.5 # Will only be used if histogram_variable is hit_multiplicity and use_classifier is True
+      use_bg_variations: 300
+    
+  # Stage clustering
+  clustering:
+    mode: single
+    parameters:
+      max_cluster_time: **max_cluster_time** # In microseconds
+      max_hit_time_diff: **max_hit_time_diff** # In microseconds
+      max_hit_distance: **max_hit_distance** # In cm
+      min_hit_multiplicity: **min_hit_multiplicity**
+      min_neighbours: **min_neighbours**
+  
+  # Stage bdt_training
+  bdt_training:
+    optimize_hyperparameters: True # True or False
+    optimize_hyperparameters_random_state: 42 # Integer or None
+    threshold: 0.5 # Only used for hit_multiplicity type histogram
+    bdt_hyperparameters: null # null (None) or dictionary of hyperparameters. Chose either this or optimize_hyperparameters
+

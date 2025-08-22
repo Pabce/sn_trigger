@@ -81,22 +81,56 @@ def read_and_pool(info_output_dir, info_output_file_base_str, files_to_read, sta
     # Also keep the dead points in a separate dataframe
     df_na = df[~df.index.isin(df_clean.index)]
 
+    # Check if the df_na is empty
+    if df_na.empty:
+        print("No NaN values found in the dataframe")
+    else:
+        print("NaN values found in the dataframe")
+
     # Get the list of distances and models used.
     # They should be the same for all files, so we can just take the first one
     model_names = list( df_clean['trigger_efficiency'][0].get('trigger_efficiencies').keys() )
-    distances = df_clean['trigger_efficiency'][0].get('distance_to_evaluate')
+    print(f"Model names: {model_names}")
+
+    # Check if we have 'distance_to_evaluate' or 'number_of_interactions_to_evaluate'
+    distance_to_evaluate = df_clean['trigger_efficiency'][0].get('distance_to_evaluate')
+    number_of_interactions_to_evaluate = df_clean['trigger_efficiency'][0].get('number_of_interactions_to_evaluate')
+    if distance_to_evaluate is not None:
+        distances_or_num_interactions = distance_to_evaluate
+    else:
+        distances_or_num_interactions = number_of_interactions_to_evaluate
+
 
     # Get some arrays from the config and the output dicts of the different stages
     config_column = df_clean['config']
     config_expanded = pd.json_normalize(config_column, max_level=2)
     config_expanded.index = config_column.index
-    config_column_na = df_na['config']
-    config_expanded_na = pd.json_normalize(config_column_na, max_level=2)
-    config_expanded_na.index = config_column_na.index
+    if not df_na.empty:
+        config_column_na = df_na['config']
+        config_expanded_na = pd.json_normalize(config_column_na, max_level=2)
+        config_expanded_na.index = config_column_na.index
+
+    # Cross-check: make sure that you have the correct detector
+    # detector_type = config_expanded['Detector.type']
+    # print(f"Detector type: {detector_type}")
+    # # Print the unique values
+    # print(f"Unique values: {config_expanded['Detector.type'].unique()}")
 
     cparams = config_expanded['Simulation.clustering.parameters'].apply(pd.Series)
-    cparams_na = config_expanded_na['Simulation.clustering.parameters'].apply(pd.Series)
-    print(f"cparams.columns: {cparams.columns}")
+    if not df_na.empty:
+        cparams_na = config_expanded_na['Simulation.clustering.parameters'].apply(pd.Series)
+    #print(f"cparams.columns: {cparams.columns}")
+
+    # TODO: This is likely to cause problems when there are multiple models -----------
+    # Another stupid expansion to get the pinching parameters
+    config_expanded_2 = pd.json_normalize(config_column, max_level=4)
+    supernova_spectra = config_expanded_2['Simulation.trigger_efficiency.physics.supernova_spectra'].apply(pd.Series)
+    supernova_spectra_expanded = supernova_spectra.join(
+        pd.json_normalize(supernova_spectra.iloc[:, 0])
+    ).drop(columns=[0])     # remove the original dict column
+
+    supernova_spectra_expanded.index = config_column.index
+    # --------------------------------------------------------------------------------
 
     # Trigger efficiencies and clustering output we only have for the clean dataframe
     trigger_efficiency = df_clean['trigger_efficiency'].apply(pd.Series)
@@ -108,39 +142,44 @@ def read_and_pool(info_output_dir, info_output_file_base_str, files_to_read, sta
 
     # Put everything together in a single dataframe for each model
     opdf = {}
-    opdf_na = cparams_na
-    opdf_na['trigger_efficiency'] = -1
+    if not df_na.empty:
+        opdf_na = cparams_na
+        opdf_na['trigger_efficiency'] = -1
+    else:
+        opdf_na = None
+
     for model in model_names:
         # Separate the trigger efficiencies into different columns for each distance
         # Drop rows where the list is not complete
 
         trigger_efficiencies_columns = trigger_efficiencies[model].apply(pd.Series)
         trigger_efficiencies_columns.dropna(axis=0, inplace=True)
-        trigger_efficiencies_columns.columns = [f'trigger_efficiency.{d}' for d in distances]
+        trigger_efficiencies_columns.columns = [f'trigger_efficiency.{d}' for d in distances_or_num_interactions]
 
         # For the clean dataframe
-        opdf[model] = pd.concat([trigger_efficiencies_columns, cparams, clustering, df_clean], axis=1)
+        opdf[model] = pd.concat([trigger_efficiencies_columns, cparams, supernova_spectra_expanded, clustering, df_clean], axis=1)
 
         #print(opdf[model])
         print(opdf[model].columns)
     
-    return opdf, opdf_na, model_names, distances, config_column
+    return opdf, opdf_na, model_names, distances_or_num_interactions, config_column
 
 # Find the top n configurations with the highest trigger efficiencies for the given models and distances
-def find_top_n_configs(n, model_names, distances, opdf):
+def find_top_n_configs(n, model_names, distances_or_num_interactions, opdf):
     top_configs_df = {}
     for model in model_names:
         top_configs_df[model] = {}
-        for i, distance in enumerate(distances):
+        for i, distance_or_num_interaction in enumerate(distances_or_num_interactions):
 
-            df_sorted = opdf[model].sort_values(by=f'trigger_efficiency.{distance}', ascending=False)
+            df_sorted = opdf[model].sort_values(by=f'trigger_efficiency.{distance_or_num_interaction}', ascending=False)
 
-            top_configs_df[model][distance] = df_sorted.head(n)
+            top_configs_df[model][distance_or_num_interaction] = df_sorted.head(n)
 
-            # Print the top 5 configurations with all columns
-            print(f"Top {n} configurations for model {model}, distance {distance}")
+            # Print the top n configurations with all columns
+            pd.set_option('display.max_columns', None)
+            print(f"Top {n} configurations for model {model}, 'distances_or_num_interactions': {distance_or_num_interaction}")
             print(df_sorted
-                .loc[:, [f'trigger_efficiency.{distance}', 'max_cluster_time', 'max_hit_time_diff', 'max_hit_distance', 'min_hit_multiplicity', 'min_neighbours']]
+                .loc[:, [f'trigger_efficiency.{distance_or_num_interaction}', 'max_cluster_time', 'max_hit_time_diff', 'max_hit_distance', 'min_hit_multiplicity', 'min_neighbours']]
                 .head(n))
             print("\n")
 
@@ -153,17 +192,76 @@ if __name__=='__main__':
     info_output_file_base_str = 'info_output_random_'
     # The number of files to read
     files_to_read = 3500 # 'all', an integer, or a list/numpy 1d array of integers
+
+    # Do you want to generate the top configs for each model? With distances or number of interactions?
+    generate_top_configs_for_each_model = False
+    # Do you want to generate the top configs for each distance or number of interactions?
+    gen_use_distances = False
     # --------------------------------------
 
     # Standard VD
     #info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/livermore'
-    # info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/test'
+    # info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/vd_standard'
     # starting_config_number = 0
     # delete_old = True
     # base_config_file_path = '../../configs/optimized_vd/base_optimized_vd.yaml'
     # config_output_dir = '../../configs/optimized_vd/'
     # config_output_base_str = 'optimized_vd_'
     # config_list_file_name = 'optimized_vd_config_list.txt'
+
+    # Standard VD CC only
+    # info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/vd_cconly'
+    # starting_config_number = 0
+    # delete_old = True
+    # base_config_file_path = '../../configs/optimized_vd_cconly/base_optimized_vd_cconly.yaml'
+    # config_output_dir = '../../configs/optimized_vd_cconly/'
+    # config_output_base_str = 'optimized_vd_cconly_'
+    # config_list_file_name = 'optimized_vd_cconly_config_list.txt'
+
+    # Standard VD laronly
+    # info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/vd_laronly'
+    # starting_config_number = 0
+    # delete_old = True
+    # base_config_file_path = '../../configs/optimized_vd_laronly/base_optimized_vd_laronly.yaml'
+    # config_output_dir = '../../configs/optimized_vd_laronly/'
+    # config_output_base_str = 'optimized_vd_laronly_'
+    # config_list_file_name = 'optimized_vd_laronly_config_list.txt'
+
+    # Low gammas VD
+    # info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/vd_lowgammas'
+    # starting_config_number = 0
+    # delete_old = True
+    # base_config_file_path = '../../configs/optimized_vd_lowgammas/base_optimized_vd_lowgammas.yaml'
+    # config_output_dir = '../../configs/optimized_vd_lowgammas/'
+    # config_output_base_str = 'optimized_vd_lowgammas_'
+    # config_list_file_name = 'optimized_vd_lowgammas_config_list.txt'
+
+    # Super low gammas VD
+    # info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/vd_superlowgammas'
+    # starting_config_number = 0
+    # delete_old = True
+    # base_config_file_path = '../../configs/optimized_vd_superlowgammas/base_optimized_vd_superlowgammas.yaml'
+    # config_output_dir = '../../configs/optimized_vd_superlowgammas/'
+    # config_output_base_str = 'optimized_vd_superlowgammas_'
+    # config_list_file_name = 'optimized_vd_superlowgammas_config_list.txt'
+
+    # Low radon VD
+    # info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/vd_lowradon'
+    # starting_config_number = 0
+    # delete_old = True
+    # base_config_file_path = '../../configs/optimized_vd_lowradon/base_optimized_vd_lowradon.yaml'
+    # config_output_dir = '../../configs/optimized_vd_lowradon/'
+    # config_output_base_str = 'optimized_vd_lowradon_'
+    # config_list_file_name = 'optimized_vd_lowradon_config_list.txt'
+
+    # Random VD RW
+    # info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/vd_rw'
+    # starting_config_number = 0
+    # delete_old = True
+    # base_config_file_path = '../../configs/optimized_vd_rw/base_optimized_vd_rw.yaml'
+    # config_output_dir = '../../configs/optimized_vd_rw/'
+    # config_output_base_str = 'optimized_vd_rw_'
+    # config_list_file_name = 'optimized_vd_rw_config_list.txt'
 
     # High efficiency VD
     # info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/vd_higheff'
@@ -174,17 +272,26 @@ if __name__=='__main__':
     # config_output_base_str = 'optimized_vd_higheff_'
     # config_list_file_name = 'optimized_vd_higheff_config_list.txt'
 
+    # Random VD nowall
+    # info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/vd_nowall'
+    # starting_config_number = 0
+    # delete_old = True
+    # base_config_file_path = '../../configs/optimized_vd_nowall/base_optimized_vd_nowall.yaml'
+    # config_output_dir = '../../configs/optimized_vd_nowall/'
+    # config_output_base_str = 'optimized_vd_nowall_'
+    # config_list_file_name = 'optimized_vd_nowall_config_list.txt'
+
     # High ADC VD
-    info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/vd_highadc'
-    starting_config_number = 0
-    delete_old = True
-    base_config_file_path = '../../configs/optimized_vd_highadc/base_optimized_vd_highadc.yaml'
-    config_output_dir = '../../configs/optimized_vd_highadc/'
-    config_output_base_str = 'optimized_vd_highadc_'
-    config_list_file_name = 'optimized_vd_highadc_config_list.txt'
+    # info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/vd_highadc'
+    # starting_config_number = 0
+    # delete_old = True
+    # base_config_file_path = '../../configs/optimized_vd_highadc/base_optimized_vd_highadc.yaml'
+    # config_output_dir = '../../configs/optimized_vd_highadc/'
+    # config_output_base_str = 'optimized_vd_highadc_'
+    # config_list_file_name = 'optimized_vd_highadc_config_list.txt'
 
     # Standard HD
-    #info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/hd_standard'
+    # info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/hd_standard'
     # starting_config_number = 0
     # delete_old = True
     # base_config_file_path = '../../configs/optimized_hd/base_optimized_hd.yaml'
@@ -192,30 +299,133 @@ if __name__=='__main__':
     # config_output_base_str = 'optimized_hd_'
     # config_list_file_name = 'optimized_hd_config_list.txt'
 
-    # --------------------------------------
+    # -------------------------------------
+    # Standard VD CC only SN parameter grid
+    # info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger/vd_cconly'
+    # starting_config_number = 3200
+    # delete_old = True
+    # base_config_file_path = '../../configs/optimized_vd_cconly/base_optimized_vd_cconly.yaml'
+    # config_output_dir = '../../configs/optimized_vd_cconly_sn_parameter_grid/'
+    # config_output_base_str = 'optimized_vd_cconly_sn_parameter_grid_'
+    # config_list_file_name = 'optimized_vd_cconly_sn_parameter_grid_config_list.txt'
+    # GEN_SN_PARAMETER_GRID = True
+    # generate_top_configs_for_each_model = True
+    # READ_SN_PARAMETER_GRID = False
 
-    opdf, opdf_na, model_names, distances, configs_col = read_and_pool(info_output_dir, info_output_file_base_str,
-                                                                     files_to_read, start_at=0)
+    # -------------------------------------
+    # # READING the SN PARAMETER GRID OUTPUTS
+    info_output_dir = '/eos/project-e/ep-nu/pbarhama/trigger-grid/vd_cconly'
+    info_output_file_base_str = 'info_output_grid_'
+    files_to_read = 5000
+    READ_SN_PARAMETER_GRID = True
+    GEN_SN_PARAMETER_GRID = False
+    generate_top_configs_for_each_model = False
+
+
+    opdf, opdf_na, model_names, distances_or_num_interactions, configs_col = read_and_pool(info_output_dir, info_output_file_base_str,
+                                                                      files_to_read, start_at=0)
+    if READ_SN_PARAMETER_GRID:
+        # Save the opdf to a pickle file in local_saves
+        import pickle
+        pickle_jar = [opdf, opdf_na, model_names, distances_or_num_interactions, configs_col]
+        with open('../../local_saves/opdf_sn_parameter_grid.pkl', 'wb') as f:
+            pickle.dump(pickle_jar, f)
+
+        
+        print(model_names)
+        print(distances_or_num_interactions)
+        print(opdf[model_names[0]].keys())
+
+        model = model_names[0]
+
+        for num_events in distances_or_num_interactions:
+
+            print(f"Num events: {num_events}")
+            # plt.figure()
+            # plt.scatter(opdf['GKVM model']['max_cluster_time'], opdf['GKVM model'][f'trigger_efficiency.{distance}'], s=20)
+            # plt.scatter(opdf_na['max_cluster_time'], np.zeros(opdf_na.shape[0])-1, c='red', s=15)
+
+            fig, ax = plt.subplots()
+            opdf[model].plot(x='pinching_parameters.average_energy', y='pinching_parameters.alpha', kind='scatter', 
+                             ax=ax, c=f'trigger_efficiency.{num_events}', cmap='gnuplot2')
+            ax.set_title(f"{model}, Num events: {num_events}")
+
+            # fig, ax = plt.subplots()
+            # opdf[model].plot(x='max_cluster_time', y=f'trigger_efficiency.{distance}', kind='scatter', ax=ax)
+            # ax.set_title(f"{model}, Distance: {distance} kpc")
+
+
+            # fig, ax = plt.subplots()
+            # opdf[model].plot(kind='scatter', x='sn_eff_clusters_num', y='bg_eff_clusters_num',
+            #                     c=f'trigger_efficiency.{distance}', cmap='inferno', ax=ax)
+            # ax.set_xscale('log')
+            # ax.set_yscale('log')
+            # ax.set_title(f"{model}, Distance: {distance} kpc")
+        
+            plt.show()
+        
+        exit('testing sn pooling')
+
+    # --------------------------------------------    
 
     print(f'Model names: {model_names}')
-    print(f'Distances: {distances}')
+    if gen_use_distances:
+        print(f'Distances: {distances_or_num_interactions}')
+    else:
+        print(f'Number of interactions: {distances_or_num_interactions}')
 
-    top_configs_df = find_top_n_configs(3, model_names, distances, opdf)
+    top_configs_df = find_top_n_configs(3, model_names, distances_or_num_interactions, opdf)
 
-    new_distances_per_model = {}
-    new_distances_per_model['Livermore model'] = [6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 27.0, 29.0, 32.0, 35.0, 38.0]
-    new_distances_per_model['GKVM model'] = [11.0, 14.0, 17.0, 19.0, 21.0, 23.0, 25.0, 27.0, 29.0, 32.0, 35.0, 40.0, 45.0, 50.0]
-    new_distances_per_model['Garching model'] = 10.0
-    new_distances_per_model['Livermore'] = [6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 27.0, 29.0, 32.0, 35.0, 38.0]
-    new_distances_per_model['GKVM'] = [11.0, 14.0, 17.0, 19.0, 21.0, 23.0, 25.0, 27.0, 29.0, 32.0, 35.0, 40.0, 45.0, 50.0]
-    new_distances_per_model['Garching'] = 10.0
+    # Do you want to generate the top configs for each model? With distances or number of interactions?
+    if not generate_top_configs_for_each_model:
+        exit()
+    
+    if not GEN_SN_PARAMETER_GRID:
+        new_distances_per_model = {}
+        new_num_interactions_per_model = {}
+        if gen_use_distances:
+            new_distances_per_model['Livermore'] = [6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 27.0, 29.0, 32.0, 35.0, 38.0]
+            new_distances_per_model['GKVM'] = [11.0, 14.0, 17.0, 19.0, 21.0, 23.0, 25.0, 27.0, 29.0, 32.0, 35.0, 40.0, 45.0, 50.0]
+            new_distances_per_model['Garching'] = [6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 27.0, 29.0, 32.0, 35.0, 38.0]
+            new_distances_per_model['Nakazato30'] = [6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 27.0, 29.0, 32.0, 35.0, 38.0]
+        else:
+            new_num_interactions_per_model['Livermore'] = [20, 30, 40, 50, 60, 75, 90, 105, 120, 150, 180, 240, 300, 360, 500, 1000]
+            new_num_interactions_per_model['GKVM'] = [20, 30, 40, 50, 60, 75, 90, 105, 120, 150, 180, 240, 300, 360, 500, 1000]
+            new_num_interactions_per_model['Garching'] = [20, 30, 40, 50, 60, 75, 90, 105, 120, 150, 180, 240, 300, 360, 500, 1000]
+            new_num_interactions_per_model['Nakazato30'] = [20, 30, 40, 50, 60, 75, 90, 105, 120, 150, 180, 240, 300, 360, 500, 1000]
 
-    # Generate the top configurations
-    gc.generate_top_n_configs(top_configs_df, configs_col, model_names, distances,
-                                starting_config_number, delete_old, base_config_file_path,
-                                config_output_dir, config_output_base_str, config_list_file_name,
-                                new_distances_per_model)
+        # Generate the top configurations
+        gc.generate_top_n_configs(top_configs_df, configs_col, model_names, distances_or_num_interactions,
+                                    starting_config_number, delete_old, base_config_file_path,
+                                    config_output_dir, config_output_base_str, config_list_file_name,
+                                    new_distances_per_model, new_num_interactions_per_model)
 
+    else:
+        new_distances_per_model = {}
+        new_num_interactions_per_model = {}
+
+        new_num_interactions_per_model['Livermore'] = [10, 30, 45, 60, 75, 90, 105, 120, 150, 180, 240, 300, 360, 500]
+
+        supernova_parameter_grid = {
+            'average_energy': {'mode': 'uniform', 'range': [8, 18]},
+            'alpha': {'mode': 'uniform', 'range': [1.4, 3.2]},
+        }
+        n_configs = 300
+        model_to_select = 'Livermore'
+        distance_or_num_interactions = 90
+
+        gc.generate_sn_parameter_grid_random_configs(n_configs, top_configs_df, configs_col, 'Livermore', 'Custom', 
+                                                     distance_or_num_interactions, starting_config_number, delete_old, 
+                                                     base_config_file_path, config_output_dir, config_output_base_str, 
+                                                     config_list_file_name, new_distances_per_model, new_num_interactions_per_model, 
+                                                     supernova_parameter_grid)
+        
+        # def generate_sn_parameter_grid_random_configs(top_configs_df, configs_col, model_to_select, model_to_label, distances_or_num_interactions,
+        #                         starting_config_number, delete_old, base_config_file_path, 
+        #                         config_output_dir, config_output_base_str, 
+        #                         config_list_file_name, new_distances_per_model, new_num_interactions_per_model,
+        #                         supernova_parameter_grid):
+        
     exit()
 
     # Create config files for the top configurations

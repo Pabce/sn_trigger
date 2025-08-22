@@ -111,6 +111,8 @@ class StageManager:
                 if self.error_behavior == "kill":
                     raise e
                 elif self.error_behavior == "graceful":
+                    import traceback
+                    logging.error(f"Full error traceback:\n{traceback.format_exc()}")
                     break
                 else:
                     raise ValueError(f"Invalid error behavior: {self.error_behavior}")
@@ -118,8 +120,12 @@ class StageManager:
             cumulative_stage_output_data.update(stage_output_data)
             cumulative_stage_info_output_data[stage_name] = stage_info_output_data
 
+            # Check that the output data file is provided
+            if self.stages_with_saved_output_data is None or self.output_data_file is None:
+                self.log.info("[bold]No output file provided (or no stages indicated to save), not saving output data", extra={"markup": True})
+            
             # Save the output data if required
-            if self.stages_with_saved_output_data is not None:
+            elif self.stages_with_saved_output_data is not None:
                 if self.stages_with_saved_output_data == "all"\
                 or stage_name in self.stages_with_saved_output_data\
                 or (self.stages_with_saved_output_data == "last" and stage_name == self.final_stage_name):
@@ -136,8 +142,6 @@ class StageManager:
 
             stage.exit()
         
-        if self.stages_with_saved_output_data is None:
-            self.log.info("[bold]No output file provided, not saving output data", extra={"markup": True})
         
         return cumulative_stage_output_data, cumulative_stage_info_output_data, exception
 

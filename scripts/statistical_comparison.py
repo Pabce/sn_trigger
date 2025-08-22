@@ -199,6 +199,9 @@ def poisson_log_likelihood(mu, gamma, observed, expected, sn_shape):
     # log_term = np.where(observed > 0, observed * np.log(model), 0)
     # log_likelihood = np.sum(-model + log_term, axis=0)
 
+    # Add a small epsilon to model to avoid divide by zero in log
+    observed_3d = np.where(observed_3d > 0, observed_3d, 1e-10)
+    
     log_term = np.where(observed_3d > 0, observed_3d * np.log(observed_3d / model), 0)
     log_likelihood = - np.sum(model - observed_3d + log_term, axis=1)
 

@@ -46,7 +46,6 @@ import cProfile
 import pstats
 
 
-
 def start_from_bdt():
     # TODO: This is a temporary function to start from a pre-trained BDT
 
@@ -315,6 +314,8 @@ def main():
 
     # Read the command line for the configuration file, and possibly the input and output files
     config_path, input_path, output_path, output_info_path = parse_arguments()
+
+    print(output_path, output_info_path, "ÑFDÑLAKDJFÑLS")
 
     # Create the configuration object, including the "loaded" parameters
     # If an input/output file is provided from the command line, it will overwrite the configuration file here

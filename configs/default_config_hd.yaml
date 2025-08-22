@@ -30,7 +30,7 @@ DataFormat:
   sn_event_number_per_file: 1000
 
   bg_sample_number_per_file: 20
-  bg_sample_length: 8.5 # Length of the background samples in ms
+  bg_sample_length: 4.492 # Length of the background samples in ms
 
   # Auxiliary pickles (and other stuff) and .dat for coordinates
   aux_coordinate_dir: ../aux_data/detector_coordinates/
@@ -38,19 +38,21 @@ DataFormat:
 
 
 Simulation:
-
   # Stage load_events
   load_events:
-    sim_mode: aronly # 'xe' or 'aronly'
+    sim_mode: xe # 'xe' or 'aronly'
+    # Channels to be used for the supernova events
+    sn_channels: ["cc"]
     # Number of files to load for SN and BG
-    sn_file_limit: 100
-    bg_file_limit: 28
+    sn_file_limit: [7]
+    bg_file_limit: 2
 
-    sn_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_hd_snnue_pds_cc/
-    sn_hit_file_start_pattern: 'prodmarley_nue_dune10kt_1x2x6'
-    sn_hit_file_end_pattern: '_g4_detsim_reco_hist.root'
-    sn_info_file_end_pattern: '_stana_hist.root'
-    photon_file_end_pattern: 'NOTHING'
+
+    sn_data_dir: [/eos/project-e/ep-nu/pbarhama/sn_saves/jan25_hd_snnue_pds_cc/]
+    sn_hit_file_start_pattern: ['prodmarley_nue_dune10kt_1x2x6']
+    sn_hit_file_end_pattern: ['_g4_detsim_reco_hist.root']
+    sn_info_file_end_pattern: ['_stana_hist.root']
+    photon_file_end_pattern: ['NOTHING']
 
     bg_data_dir: /eos/project-e/ep-nu/pbarhama/sn_saves/jan25_hd_background_juergen/
     bg_hit_file_start_pattern: 'prodbg_radiological_decay0_dune10kt_1x2x6'
@@ -60,7 +62,7 @@ Simulation:
     split_for_classifier: True
     classifier_energy_limit: 30
     train_split: 0.5
-  
+
   # Stage clustering
   clustering:
     mode: single
@@ -77,7 +79,7 @@ Simulation:
 
   # Stage bdt_training
   bdt_training:
-    optimize_hyperparameters: True
+    optimize_hyperparameters: False
     optimize_hyperparameters_random_state: 42 # Integer or None
     threshold: 0.5 # Only used for hit_multiplicity type histogram
     bdt_hyperparameters: null # null (None) or dictionary of hyperparameters. Chose either this or optimize_hyperparameters
@@ -88,29 +90,23 @@ Simulation:
     number_of_tests: 1000
 
     fake_trigger_rate: 3.85802469e-7 # = 1/(60 * 60 * 24 * 30) -> 1 trigger per month
-    distance_to_evaluate: 30.0  # kpc
-    burst_time_window: 1.0e+6 # microseconds
+    distance_to_evaluate: null #20.0  # kpc
+    number_of_interactions_to_evaluate: [120, 300] #300  # either this or distance_to_evaluate should be set #TODO
+    # ONLY USE ENERGY LOWER LIMIT IF USING NUMBER OF INTERACTIONS TO EVALUATE! (IF NOT THE DISTANCE IS BULLSHIT)
+    energy_lower_limit: 10 # MeV --> This is used to cut at the low-energy tail of the spectrum (i.e. to comply with the 10 MeV TDR requirement)
+    burst_time_window: 0.65e+6 # microseconds
 
     physics:
-      # supernova_spectra:
-      #   spec_type: pinching
-      #   pinching_parameters:
-      #     average_energy: 23.0
-      #     alpha: 5.0
-      #   interaction_number_10kpc: 3295
-      
       supernova_spectra:
-        spec_type: model_name
-        model_name: "GKVM"
-
-      # Spectrum or list of spectra to be used
-      # supernova_spectra:
-      #   - spec_type: model_name
-      #     model_name: "GKVM"
-      #   - spec_type: model_name
-      #     model_name: "Livermore"
-      #   - spec_type: model_name
-      #     model_name: "Garching"
+        label: CHIPM0NK # TODO: IMPLEMENT THIS
+        spec_type: pinching
+        pinching_parameters:
+          average_energy: 11.12
+          alpha: 2.22
+        interaction_number_10kpc:
+          cc: 3000
+    
+      cross_section_cc_file: "../cross-sections/xsec_superallowed.txt"
 
     statistical_info:
       histogram_variable: bdt_output # hit_multiplicity, bdt_output (only valid if using BDT), naive_count

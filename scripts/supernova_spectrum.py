@@ -37,6 +37,7 @@ class SupernovaSpectrum:
 
         self.spectrum_values = spectrum_values
         self.energy_bins = energy_bins
+        self.energy_bin_centers = (energy_bins[1:] + energy_bins[:-1]) / 2
 
         # Values of v_e-CC interactions at 10 kpc for a 40 kton LArTPC
         self.interaction_number_10kpc = interaction_number_10kpc
@@ -55,7 +56,7 @@ class SupernovaSpectrum:
             if 'model_name' in self.parameters.keys():
                 return f"{self.parameters['model_name']}"
             else:
-                return f"Model-with-parameters:{self.parameters}"
+                return f"{self.parameters['label']}"
         else:
             # TODO: Add support for non-pinched models
             return "Custom_model"
@@ -76,6 +77,13 @@ class SupernovaSpectrum:
         
         spectrum_values, energy_bins = cls.pinched_spectrum_histogram(energy_bins, average_energy, alpha)
         parameters.update({'average_energy': average_energy, 'alpha': alpha})
+
+        # If interaction number is a dict, we need to create a spectrum for each channel
+        if isinstance(interaction_number_10kpc, dict):
+            spectra = {}
+            for channel, interaction_number in interaction_number_10kpc.items():
+                spectra[channel] = cls(spectrum_values, energy_bins, interaction_number, time_profile=time_profile, parameters=parameters)
+            return spectra
 
         return cls(spectrum_values, energy_bins, interaction_number_10kpc, time_profile=time_profile, parameters=parameters)
 
@@ -153,14 +161,23 @@ def sample_indices_by_energy(spectrum_values, energy_bins, sn_energies, n_sample
     return np.array(event_indices)
 
 # Function to weight a bunch of events by the spectrum energies
-def weigh_by_supernova_spectrum(sn_energies, supernova_spectrum):
+def weigh_by_supernova_spectrum(sn_energies, supernova_spectrum, cross_section=None):
     weights = []
+    
+    # If weighing by cross section, we need to interpolate the cross section to the energy bins of the supernova spectrum
+    if cross_section is not None:
+        interp_cross_section = np.interp(supernova_spectrum.energy_bins, cross_section[:, 0], cross_section[:, 1])
+
     for i, _ in enumerate(sn_energies):
         energy = sn_energies[i]
         # Find the energy bin corresponding to the energy
         energy_bin_index = np.searchsorted(supernova_spectrum.energy_bins, energy)
-        # Add the weight
-        weight = supernova_spectrum.spectrum_values[energy_bin_index-1]
+        # Add the weight, optionally weighted by the cross section
+        if cross_section is not None:
+            weight = supernova_spectrum.spectrum_values[energy_bin_index-1] * interp_cross_section[energy_bin_index-1]
+        else:
+            weight = supernova_spectrum.spectrum_values[energy_bin_index-1]
+
         weights.append(weight)
     
     weights = np.array(weights)

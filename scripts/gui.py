@@ -93,17 +93,18 @@ def get_custom_table(config, table_name, **kwargs) -> Table:
             for spectrum in sn_spectra:
                 spec_type = spectrum.get("spec_type")
                 if spec_type == "pinching":
-                    average_energy = spectrum.get("pinching_parameters", "average_energy")
-                    alpha = spectrum.get("pinching_parameters", "alpha")
+                    average_energy = spectrum.get("pinching_parameters").get("average_energy")
+                    alpha = spectrum.get("pinching_parameters").get("alpha")
+                    model_name = spectrum.get("label")
                 elif spec_type == "model_name":
                     import supernova_spectrum
                     model_name = spectrum.get("model_name")
-                    model_names.append(model_name)
                     average_energy = supernova_spectrum.MODEL_PINCHED_PARAMETERS[model_name]["average_energy"]
                     alpha = supernova_spectrum.MODEL_PINCHED_PARAMETERS[model_name]["alpha"]
                 else:
                     raise ValueError("Invalid supernova spectrum type")
             
+                model_names.append(model_name)
                 average_energies.append(average_energy)
                 alphas.append(alpha)
 
@@ -111,35 +112,59 @@ def get_custom_table(config, table_name, **kwargs) -> Table:
                 table.add_row("Model names", f"{model_names}")
             table.add_row("Average energies", f"{average_energies} MeV")
             table.add_row("Alphas", f"{alphas}")
-            table.add_row("Distance to evaluate", f"{config.get('Simulation', 'trigger_efficiency', 'distance_to_evaluate')} kpc")
+
+            sn_channels = config.get("Simulation", "load_events", "sn_channels")
+            table.add_row("SN channels", f"{sn_channels}")
+            
+            distance_to_evaluate = config.get("Simulation", "trigger_efficiency", "distance_to_evaluate")
+            number_of_interactions_to_evaluate = config.get("Simulation", "trigger_efficiency", "number_of_interactions_to_evaluate")
+            if number_of_interactions_to_evaluate is not None:
+                table.add_row("Number of interactions to evaluate", f"{number_of_interactions_to_evaluate}")
+            elif distance_to_evaluate is not None:
+                table.add_row("Distance to evaluate", f"{distance_to_evaluate} kpc")
             table.add_row("Burst time window", f"{config.get('Simulation', 'trigger_efficiency', 'burst_time_window')/1000} ms")
             table.add_row("Fake trigger rate", f"{config.get('Simulation', 'trigger_efficiency', 'fake_trigger_rate')} Hz")
 
     
     elif table_name == "memory_usage":
-        sn_hits = kwargs.get("memory_usage").get("sn_hits")
-        sn_info = kwargs.get("memory_usage").get("sn_info")
-        bg_hits = kwargs.get("memory_usage").get("bg_hits")
+        sn_channels = config.get("Simulation", "load_events", "sn_channels")
+
+        for sn_channel in sn_channels:
+            sn_hits = kwargs.get("memory_usage").get(f"sn_hits_{sn_channel}")
+            sn_info = kwargs.get("memory_usage").get(f"sn_info_{sn_channel}")
+        bg_hits = kwargs.get("memory_usage").get(f"bg_hits")
 
         table = Table(title="Memory Usage of Loaded Data", title_style="bold yellow", title_justify="left")
 
         table.add_column("Data Type", justify="left", style="green", no_wrap=True)
         table.add_column("Memory Usage (MB)", justify="right", style="red")
 
-        table.add_row("SN hits", f"{sn_hits:.2f}")
-        table.add_row("SN event info", f"{sn_info:.2f}")
+        for sn_channel in sn_channels:
+            table.add_row(f"SN hits ({sn_channel})", f"{sn_hits:.2f}")
+            table.add_row(f"SN event info ({sn_channel})", f"{sn_info:.2f}")
         table.add_row("BG hits", f"{bg_hits:.2f}")
 
     elif table_name == "data_loading_statistics":
-        sn_hit_num = kwargs.get("data_loading_statistics").get("sn_hit_num")
-        sn_eff_hit_num = kwargs.get("data_loading_statistics").get("sn_eff_hit_num")
-        sn_bdt_hit_num = kwargs.get("data_loading_statistics").get("sn_bdt_hit_num")
+        sn_channels = config.get("Simulation", "load_events", "sn_channels")
+
+        sn_hit_num = {}
+        sn_eff_hit_num = {}
+        sn_bdt_hit_num = {}
+        sn_event_num = {}
+        sn_eff_event_num = {}
+        sn_bdt_event_num = {}
+        for sn_channel in sn_channels:
+            sn_hit_num[sn_channel] = kwargs.get("data_loading_statistics").get(f"sn_hit_num_{sn_channel}")
+            sn_eff_hit_num[sn_channel] = kwargs.get("data_loading_statistics").get(f"sn_eff_hit_num_{sn_channel}")
+            sn_bdt_hit_num[sn_channel] = kwargs.get("data_loading_statistics").get(f"sn_bdt_hit_num_{sn_channel}")
+            sn_event_num[sn_channel] = kwargs.get("data_loading_statistics").get(f"sn_event_num_{sn_channel}")
+            sn_eff_event_num[sn_channel] = kwargs.get("data_loading_statistics").get(f"sn_eff_event_num_{sn_channel}")
+            sn_bdt_event_num[sn_channel] = kwargs.get("data_loading_statistics").get(f"sn_bdt_event_num_{sn_channel}")
+
         bg_hit_num = kwargs.get("data_loading_statistics").get("bg_hit_num")
         bg_eff_hit_num = kwargs.get("data_loading_statistics").get("bg_eff_hit_num")
         bg_bdt_hit_num = kwargs.get("data_loading_statistics").get("bg_bdt_hit_num")
-        sn_event_num = kwargs.get("data_loading_statistics").get("sn_event_num")
-        sn_eff_event_num = kwargs.get("data_loading_statistics").get("sn_eff_event_num")
-        sn_bdt_event_num = kwargs.get("data_loading_statistics").get("sn_bdt_event_num")
+
         bg_event_num = kwargs.get("data_loading_statistics").get("bg_event_num")
         bg_eff_event_num = kwargs.get("data_loading_statistics").get("bg_eff_event_num")
         bg_bdt_event_num = kwargs.get("data_loading_statistics").get("bg_bdt_event_num")
@@ -154,18 +179,20 @@ def get_custom_table(config, table_name, **kwargs) -> Table:
         table.add_column("Efficiency", justify="right", style="bold red")
         table.add_column("Training", justify="right", style="bold blue")
 
-        table.add_row("Number of SN hits", 
-                    f"{sn_hit_num:,}",
-                    f"{sn_eff_hit_num:,}",
-                    f"{sn_bdt_hit_num:,}")
+        for sn_channel in sn_channels:
+            table.add_row(f"Number of SN hits ({sn_channel})", 
+                        f"{sn_hit_num[sn_channel]:,}",
+                        f"{sn_eff_hit_num[sn_channel]:,}",
+                        f"{sn_bdt_hit_num[sn_channel]:,}")
         table.add_row("Number of BG hits", 
                     f"{bg_hit_num:,}",
                     f"{bg_eff_hit_num:,}",
                     f"{bg_bdt_hit_num:,}")
-        table.add_row("Total SN events", 
-                    f"{sn_event_num:,}",
-                    f"{sn_eff_event_num:,}",
-                    f"{sn_bdt_event_num:,}")
+        for sn_channel in sn_channels:
+            table.add_row(f"Total SN events ({sn_channel})", 
+                        f"{sn_event_num[sn_channel]:,}",
+                        f"{sn_eff_event_num[sn_channel]:,}",
+                        f"{sn_bdt_event_num[sn_channel]:,}")
         table.add_row("Total BG \"events\"", 
                     f"{bg_event_num:,}",
                     f"{bg_eff_event_num:,}",
@@ -184,16 +211,26 @@ def get_custom_table(config, table_name, **kwargs) -> Table:
             table.add_row(key, str(value))
     
     elif table_name == "clustering_statistics":
-        sn_eff_clusters_num = kwargs.get("sn_eff_clusters_num")
-        sn_bdt_clusters_num = kwargs.get("sn_bdt_clusters_num")
+        sn_channels = config.get("Simulation", "load_events", "sn_channels")
+
+        sn_eff_clusters_num = {}
+        sn_bdt_clusters_num = {}
+        average_sn_eff_clusters_per_event = {}
+        average_sn_bdt_clusters_per_event = {}
+        average_sn_eff_hit_multiplicity = {}
+        average_sn_bdt_hit_multiplicity = {}
+        for sn_channel in sn_channels:
+            sn_eff_clusters_num[sn_channel] = kwargs.get(f"sn_eff_clusters_num_{sn_channel}")
+            sn_bdt_clusters_num[sn_channel] = kwargs.get(f"sn_bdt_clusters_num_{sn_channel}")
+            average_sn_eff_clusters_per_event[sn_channel] = kwargs.get(f"average_sn_eff_clusters_per_event_{sn_channel}")
+            average_sn_bdt_clusters_per_event[sn_channel] = kwargs.get(f"average_sn_bdt_clusters_per_event_{sn_channel}")
+            average_sn_eff_hit_multiplicity[sn_channel] = kwargs.get(f"average_sn_eff_hit_multiplicity_{sn_channel}")
+            average_sn_bdt_hit_multiplicity[sn_channel] = kwargs.get(f"average_sn_bdt_hit_multiplicity_{sn_channel}")
+
         bg_eff_clusters_num = kwargs.get("bg_eff_clusters_num")
         bg_bdt_clusters_num = kwargs.get("bg_bdt_clusters_num")
-        average_sn_eff_clusters_per_event = kwargs.get("average_sn_eff_clusters_per_event")
-        average_sn_bdt_clusters_per_event = kwargs.get("average_sn_bdt_clusters_per_event")
         average_bg_eff_clusters_per_event = kwargs.get("average_bg_eff_clusters_per_event")
         average_bg_bdt_clusters_per_event = kwargs.get("average_bg_bdt_clusters_per_event")
-        average_sn_eff_hit_multiplicity = kwargs.get("average_sn_eff_hit_multiplicity")
-        average_sn_bdt_hit_multiplicity = kwargs.get("average_sn_bdt_hit_multiplicity")
         average_bg_eff_hit_multiplicity = kwargs.get("average_bg_eff_hit_multiplicity")
         average_bg_bdt_hit_multiplicity = kwargs.get("average_bg_bdt_hit_multiplicity")
 
@@ -202,21 +239,26 @@ def get_custom_table(config, table_name, **kwargs) -> Table:
         table.add_column("Efficiency", style="red")
         table.add_column("Training", style="blue")
 
-        table.add_row("Number of SN clusters",
-                    f"{sn_eff_clusters_num:,}",
-                    f"{sn_bdt_clusters_num:,}")
+        for sn_channel in sn_channels:
+            table.add_row(f"Number of SN clusters ({sn_channel})",
+                        f"{sn_eff_clusters_num[sn_channel]:,}",
+                        f"{sn_bdt_clusters_num[sn_channel]:,}")
         table.add_row("Number of BG clusters",
                     f"{bg_eff_clusters_num:,}",
                     f"{bg_bdt_clusters_num:,}")
-        table.add_row("Average clusters per event (SN)",
-                    f"{average_sn_eff_clusters_per_event:.2f}",
-                    f"{average_sn_bdt_clusters_per_event:.2f}")
+        
+        for sn_channel in sn_channels:
+            table.add_row(f"Average clusters per event (SN {sn_channel})",
+                        f"{average_sn_eff_clusters_per_event[sn_channel]:.2f}",
+                        f"{average_sn_bdt_clusters_per_event[sn_channel]:.2f}")
         table.add_row("Average clusters per \"event\" (BG)",
                     f"{average_bg_eff_clusters_per_event:.2f}",
                     f"{average_bg_bdt_clusters_per_event:.2f}")
-        table.add_row("Average hit multiplicity (SN)",
-                    f"{average_sn_eff_hit_multiplicity:.2f}",
-                    f"{average_sn_bdt_hit_multiplicity:.2f}")
+        
+        for sn_channel in sn_channels:
+            table.add_row(f"Average hit multiplicity (SN {sn_channel})",
+                        f"{average_sn_eff_hit_multiplicity[sn_channel]:.2f}",
+                        f"{average_sn_bdt_hit_multiplicity[sn_channel]:.2f}")
         table.add_row("Average hit multiplicity (BG)",
                     f"{average_bg_eff_hit_multiplicity:.2f}",
                     f"{average_bg_bdt_hit_multiplicity:.2f}")
